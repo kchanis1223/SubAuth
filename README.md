@@ -15,9 +15,9 @@ main service <- SubAuth <- provider runtime or protocol
 
 ## Project status
 
-The Python daemon foundation, OpenAI subscription transport, and experimental
-Claude subscription transport are implemented. Gemini remains a provider
-contract pending its capability probe. See
+The Python daemon foundation, OpenAI subscription transport, experimental
+Claude subscription transport, and terms-restricted Gemini/Antigravity
+transport are implemented. See
 [`docs/implementation-plan.md`](docs/implementation-plan.md) for the staged
 roadmap.
 
@@ -98,3 +98,40 @@ Keychain import and daemon installation are later phases.
 
 The verified runtime contract and limitations are recorded in
 [`docs/probes/claude.md`](docs/probes/claude.md).
+
+## Gemini via Antigravity (terms-restricted)
+
+Google moved personal Google AI Pro, Ultra, and free-tier terminal access from
+Gemini CLI to Antigravity CLI in June 2026. SubAuth therefore targets the
+official `agy` runtime rather than the legacy `gemini` executable.
+
+Install Antigravity CLI using Google's current instructions, then launch `agy`
+once in an interactive terminal to complete Google sign-in. The runtime stores
+the session in the OS-native keyring.
+
+```bash
+PYTHONPATH=src python3 -m subauth login gemini
+PYTHONPATH=src python3 -m subauth probe gemini
+PYTHONPATH=src python3 -m subauth run gemini "Reply exactly: GEMINI_OK"
+```
+
+SubAuth strips Gemini API-key, ADC, Vertex, and Cloud-project environment
+variables. It also refuses to run when Antigravity's `useG1Credits` fallback is
+enabled, because that setting can consume purchased AI credits after plan quota
+is exhausted. The CLI does not expose the account's exact plan tier, so SubAuth
+can verify only that the keyring-authenticated runtime offers Gemini models.
+
+Antigravity does not currently expose a flag that removes all built-in and MCP
+tools. SubAuth runs each request in an empty temporary workspace with terminal
+sandboxing and slash commands disabled, asks the model not to use tools, and
+terminates the request if a tool step appears. This is a containment boundary,
+not a proof that tools are absent.
+
+> **Terms warning:** Google Antigravity's additional terms restrict accessing
+> the service with third-party software. This adapter is marked
+> `terms-restricted` and `developer-controlled-evaluation-only`. Do not use it
+> for external-user demonstrations or production traffic without Google
+> authorization. See the
+> [Antigravity terms](https://antigravity.google/terms).
+
+See [`docs/probes/gemini.md`](docs/probes/gemini.md) for the verified contract.

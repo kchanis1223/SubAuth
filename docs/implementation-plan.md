@@ -31,7 +31,12 @@ captured with all credentials redacted.
 - Claude Code normal login and `setup-token` detection: implemented
 - Claude normalized Unix-socket text streaming: implemented
 - Claude filesystem/tool/MCP suppression: implemented for CLI flags; adversarial audit pending
-- Gemini probe: pending
+- Gemini legacy CLI consumer transition analysis: completed
+- Antigravity CLI authentication and model probe: implemented; live sign-in pending
+- Antigravity normalized Unix-socket streaming: fixture-tested; live smoke pending
+- Gemini API/Vertex environment fallback prevention: implemented
+- Antigravity AI-credit fallback refusal: implemented
+- Antigravity tool-step termination: implemented; pre-execution suppression unavailable
 
 ## Phase 1: macOS daemon foundation
 
@@ -55,6 +60,12 @@ Claude product routing through subscription credentials is not endorsed by
 Anthropic. SubAuth exposes the technical mode but marks it experimental,
 includes a strong warning in probe and inference events, and recommends API
 authentication before a formal release.
+
+Google Antigravity officially documents headless scripting, but its additional
+terms restrict third-party software from accessing the service. The SubAuth
+wrapper is therefore terms-restricted, limited to developer-controlled
+evaluation, and must not be used for external-user or production traffic
+without Google authorization.
 
 ## Phase 3: common response API
 

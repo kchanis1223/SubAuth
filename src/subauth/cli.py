@@ -13,6 +13,7 @@ from subauth.client import SubAuthClient
 from subauth.config import Settings
 from subauth.daemon.server import SubAuthDaemon
 from subauth.providers.claude import CLAUDE_POLICY_WARNING
+from subauth.providers.gemini import GEMINI_POLICY_WARNING
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -84,6 +85,12 @@ async def _login(provider: str) -> int:
         user_code = login.get("user_code")
         if user_code:
             print(f"Device code: {user_code}", file=sys.stderr)
+    command = login.get("command")
+    if isinstance(command, str) and command:
+        print(f"Run this command in an interactive terminal: {command}", file=sys.stderr)
+        detail = login.get("detail")
+        if isinstance(detail, str) and detail:
+            print(detail, file=sys.stderr)
     print(json.dumps(response, ensure_ascii=False, indent=2))
     return 0 if response.get("error") is None else 1
 
@@ -108,6 +115,8 @@ async def _run(provider: str, prompt: str, model: str, system: str | None) -> in
 def _warn_provider_policy(provider: str) -> None:
     if provider == "claude":
         print(f"WARNING: {CLAUDE_POLICY_WARNING}", file=sys.stderr)
+    elif provider == "gemini":
+        print(f"WARNING: {GEMINI_POLICY_WARNING}", file=sys.stderr)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

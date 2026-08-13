@@ -29,6 +29,15 @@ class CliTests(unittest.TestCase):
 
         self.assertEqual(output.getvalue(), "")
 
+    def test_gemini_policy_warning_is_printed_before_use(self) -> None:
+        output = io.StringIO()
+
+        with redirect_stderr(output):
+            _warn_provider_policy("gemini")
+
+        self.assertIn("WARNING:", output.getvalue())
+        self.assertIn("Google authorization", output.getvalue())
+
 
 if __name__ == "__main__":
     unittest.main()
