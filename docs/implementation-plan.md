@@ -43,7 +43,7 @@ captured with all credentials redacted.
 - token-redacted structured daemon logs: implemented
 - typed asynchronous Python SDK: implemented
 - common request cancellation: implemented
-- common daemon-memory sessions: implemented and live verified for OpenAI Codex threads
+- stateless request ownership boundary: implemented; main service owns history
 
 ## Phase 1: macOS daemon foundation
 
@@ -81,7 +81,8 @@ without Google authorization.
 - files
 - hosted web search and code execution
 - main-service function-tool round trips
-- sessions and cancellation (OpenAI sessions and all-provider cancellation implemented)
+- cancellation (implemented for all providers)
+- stateful sessions (intentionally outside the SubAuth boundary)
 - structured output
 - optional OpenAI-compatible HTTP shim
 
@@ -89,7 +90,7 @@ without Google authorization.
 
 - interactive initial provider configuration
 - provider default and named application profiles
-- request > session > profile > runtime precedence
+- request > named application profile > provider default > runtime precedence
 - provider-specific model and effort capability validation
 - requested/effective setting metadata with explicit fallback reasons
 

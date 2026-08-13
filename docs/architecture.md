@@ -22,17 +22,20 @@ local SubAuth socket, SubAuth executes it when the selected provider is usable.
 4. Provider adapters convert common requests and events.
 5. The client SDK hides daemon startup and wire-protocol details.
 
-## Request lifecycle and sessions
+## Stateless request lifecycle
 
 Every streaming response has a client-generated request ID. The daemon tracks
 the provider worker under that ID, allowing `responses.cancel` to stop it from a
 second connection. Cancellation is normalized as `response.cancelled`.
 
-Common sessions are daemon-memory records that bind a SubAuth session ID to a
-provider-native session ID. They carry optional model and system defaults and
-permit one active turn at a time. OpenAI binds sessions to Codex threads and
-resumes them on later turns. Claude and Gemini reject session creation until
-their isolated transports support genuine continuation.
+SubAuth owns no application session or conversation history. The main service
+owns user/session identity and builds every request from its canonical state.
+Each request creates a fresh provider runtime context. Provider-native thread,
+session, and conversation IDs may appear as diagnostic event metadata, but are
+never accepted as continuation handles.
+
+The only transient daemon state is an active provider task keyed by request ID.
+It exists solely for cancellation and is removed when the request terminates.
 
 ## Credential broker
 

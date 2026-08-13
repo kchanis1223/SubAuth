@@ -9,7 +9,6 @@ values.
 
 ```text
 request override
-  > session default
   > named application profile
   > provider default profile
   > official runtime default

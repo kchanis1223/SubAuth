@@ -92,7 +92,6 @@ class OpenAIAdapter(ProviderAdapter):
                 text=bool(model_summary),
                 streaming=True,
                 vision=supports_vision,
-                sessions=True,
             ),
             detail=detail,
             metadata={
@@ -187,26 +186,18 @@ class OpenAIAdapter(ProviderAdapter):
         thread_id: str | None = None
         turn_id: str | None = None
         try:
-            provider_session_id = request.get("provider_session_id")
-            if isinstance(provider_session_id, str) and provider_session_id:
-                thread_id = provider_session_id
-                selected_model = (
-                    model if isinstance(model, str) and model != "auto" else None
-                )
-            else:
-                thread_result = await self._app_server.request("thread/start", thread_params)
-                thread = thread_result.get("thread")
-                if not isinstance(thread, dict) or not isinstance(thread.get("id"), str):
-                    raise ValueError("Codex App Server did not return a thread id")
-                thread_id = thread["id"]
-                selected_model = thread_result.get("model")
+            thread_result = await self._app_server.request("thread/start", thread_params)
+            thread = thread_result.get("thread")
+            if not isinstance(thread, dict) or not isinstance(thread.get("id"), str):
+                raise ValueError("Codex App Server did not return a thread id")
+            thread_id = thread["id"]
+            selected_model = thread_result.get("model")
             yield {
                 "type": "response.started",
                 "data": {
                     "provider": self.name,
                     "transport": TransportMode.OFFICIAL_RUNTIME.value,
                     "thread_id": thread_id,
-                    "provider_session_id": thread_id,
                     "model": selected_model,
                 },
             }

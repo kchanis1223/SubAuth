@@ -62,11 +62,6 @@ for line in sys.stdin:
             "thread": {"id": "thread-test"},
             "model": "test-model",
         }
-    elif method == "thread/resume":
-        result = {
-            "thread": {"id": params["threadId"]},
-            "model": "resumed-test-model",
-        }
     elif method == "turn/interrupt":
         result = {}
     elif method == "turn/start":

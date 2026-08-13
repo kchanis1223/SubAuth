@@ -7,23 +7,16 @@ from subauth import AsyncSubAuth
 
 async def main() -> None:
     client = AsyncSubAuth()
-    session = await client.sessions.create(
+    result = await client.responses.create(
         provider="openai",
-        model="auto",
+        input="Reply exactly: SDK_OK",
         system="Answer concisely.",
     )
-
-    first = await client.responses.create(
-        provider="openai",
-        input="Remember the number 17.",
-        session=session,
-    )
-    print(first.text)
+    print(result.text)
 
     stream = client.responses.stream(
         provider="openai",
-        input="What number did I ask you to remember?",
-        session=session,
+        input="Reply exactly: STREAM_OK",
     )
     async with stream:
         async for event in stream:

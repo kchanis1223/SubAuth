@@ -88,7 +88,6 @@ class ClaudeAdapter(ProviderAdapter):
             capabilities=ProviderCapabilities(
                 text=True,
                 streaming=True,
-                sessions=False,
             ),
             detail=detail,
             metadata={

@@ -40,7 +40,7 @@ Official reference: <https://developers.openai.com/codex/app-server>
 | Text delta streaming | Working |
 | Ephemeral thread | Working |
 | Read-only sandbox | Working |
-| Session continuation | Protocol supported; SubAuth API pending |
+| Session continuation | Runtime supports it; intentionally not exposed by stateless SubAuth |
 
 The live smoke request produced `SUBAUTH_OK` as three normalized text deltas and
 finished with `response.completed`.

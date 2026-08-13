@@ -234,24 +234,11 @@ async with stream:
             await stream.cancel()
 ```
 
-OpenAI supports resumable common sessions through Codex threads:
+SubAuth requests are deliberately stateless. The main service owns user/session
+identity and canonical conversation history, and constructs each request from
+the context it wants the model to receive. Every request starts a fresh provider
+runtime context. Provider-native thread, session, or conversation IDs in events
+are diagnostic metadata only and cannot be used to resume through SubAuth.
 
-```python
-session = await client.sessions.create(
-    provider="openai",
-    model="auto",
-    system="Be concise.",
-)
-await client.responses.create(provider="openai", input="Remember 17", session=session)
-answer = await client.responses.create(
-    provider="openai",
-    input="What number did I ask you to remember?",
-    session=session,
-)
-```
-
-Sessions currently live in daemon memory and are invalidated by daemon restart.
-Claude and Gemini advertise `sessions: false`, so session creation for those
-transports returns `sessions_not_supported` instead of simulating continuity.
 See [`examples/python_sdk.py`](examples/python_sdk.py) and
 [`docs/sdk.md`](docs/sdk.md).

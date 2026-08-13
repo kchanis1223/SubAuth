@@ -56,31 +56,6 @@ class ResponseResult:
     events: tuple[ResponseEvent, ...]
 
 
-@dataclass(frozen=True, slots=True)
-class Session:
-    id: str
-    provider: str
-    model: str | None
-    provider_session_id: str | None
-    active_request_id: str | None
-    has_system_instruction: bool
-    created_at: str
-    updated_at: str
-
-    @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> Session:
-        return cls(
-            id=_required_string(value, "id"),
-            provider=_required_string(value, "provider"),
-            model=_optional_string(value.get("model")),
-            provider_session_id=_optional_string(value.get("provider_session_id")),
-            active_request_id=_optional_string(value.get("active_request_id")),
-            has_system_instruction=bool(value.get("has_system_instruction", False)),
-            created_at=_required_string(value, "created_at"),
-            updated_at=_required_string(value, "updated_at"),
-        )
-
-
 class ResponseStream:
     def __init__(
         self,
@@ -158,7 +133,6 @@ class AsyncResponses:
         input: str,
         model: str = "auto",
         system: str | None = None,
-        session: Session | str | None = None,
     ) -> ResponseStream:
         params: dict[str, Any] = {
             "provider": provider,
@@ -167,8 +141,6 @@ class AsyncResponses:
         }
         if system is not None:
             params["system"] = system
-        if session is not None:
-            params["session_id"] = session.id if isinstance(session, Session) else session
         return ResponseStream(self._client, params)
 
     async def create(
@@ -178,14 +150,12 @@ class AsyncResponses:
         input: str,
         model: str = "auto",
         system: str | None = None,
-        session: Session | str | None = None,
     ) -> ResponseResult:
         stream = self.stream(
             provider=provider,
             input=input,
             model=model,
             system=system,
-            session=session,
         )
         events = [event async for event in stream]
         failed = next((event for event in events if event.type == "response.failed"), None)
@@ -220,46 +190,6 @@ class AsyncResponses:
         return bool(_unwrap(response).get("cancellation_requested", False))
 
 
-class AsyncSessions:
-    def __init__(self, client: SubAuthClient) -> None:
-        self._client = client
-
-    async def create(
-        self,
-        *,
-        provider: ProviderName,
-        model: str = "auto",
-        system: str | None = None,
-    ) -> Session:
-        params: dict[str, Any] = {"provider": provider, "model": model}
-        if system is not None:
-            params["system"] = system
-        return Session.from_dict(_unwrap(await self._client.request("sessions.create", params)))
-
-    async def retrieve(self, session_id: str) -> Session:
-        response = await self._client.request(
-            "sessions.get",
-            {"session_id": session_id},
-        )
-        return Session.from_dict(_unwrap(response))
-
-    async def list(self) -> tuple[Session, ...]:
-        result = _unwrap(await self._client.request("sessions.list"))
-        values = result.get("sessions")
-        if not isinstance(values, list):
-            raise SubAuthError("Invalid session list received from the daemon")
-        return tuple(
-            Session.from_dict(value) for value in values if isinstance(value, Mapping)
-        )
-
-    async def delete(self, session_id: str) -> bool:
-        response = await self._client.request(
-            "sessions.delete",
-            {"session_id": session_id},
-        )
-        return bool(_unwrap(response).get("deleted", False))
-
-
 class AsyncSubAuth:
     """Typed asynchronous SDK for a local SubAuth daemon."""
 
@@ -271,7 +201,6 @@ class AsyncSubAuth:
     ) -> None:
         self._client = SubAuthClient(settings, auto_start=auto_start)
         self.responses = AsyncResponses(self._client)
-        self.sessions = AsyncSessions(self._client)
 
     async def ping(self) -> bool:
         response = await self._client.request("system.ping")
@@ -300,14 +229,3 @@ def _api_error(error: Mapping[str, Any]) -> SubAuthAPIError:
         str(error.get("code") or "subauth_error"),
         str(error.get("message") or "SubAuth request failed"),
     )
-
-
-def _required_string(value: Mapping[str, Any], key: str) -> str:
-    item = value.get(key)
-    if not isinstance(item, str):
-        raise SubAuthError(f"Invalid session field: {key}")
-    return item
-
-
-def _optional_string(value: Any) -> str | None:
-    return value if isinstance(value, str) else None

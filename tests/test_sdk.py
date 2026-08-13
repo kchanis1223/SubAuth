@@ -9,6 +9,7 @@ from typing import Any, AsyncIterator, Mapping
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 
+from subauth.client import SubAuthClient  # noqa: E402
 from subauth.config import Settings  # noqa: E402
 from subauth.daemon.server import SubAuthDaemon  # noqa: E402
 from subauth.providers.base import (  # noqa: E402
@@ -21,10 +22,10 @@ from subauth.providers.base import (  # noqa: E402
 )
 from subauth.providers.registry import ProviderRegistry  # noqa: E402
 from subauth.providers.stub import StubProviderAdapter  # noqa: E402
-from subauth.sdk import AsyncSubAuth, SubAuthAPIError  # noqa: E402
+from subauth.sdk import AsyncSubAuth  # noqa: E402
 
 
-class SessionProviderAdapter(ProviderAdapter):
+class StatelessProviderAdapter(ProviderAdapter):
     name = "openai"
 
     def __init__(self) -> None:
@@ -36,7 +37,7 @@ class SessionProviderAdapter(ProviderAdapter):
             auth_state=AuthState.READY,
             transport=TransportMode.OFFICIAL_RUNTIME,
             support_level=SupportLevel.OFFICIAL_RUNTIME,
-            capabilities=ProviderCapabilities(text=True, streaming=True, sessions=True),
+            capabilities=ProviderCapabilities(text=True, streaming=True),
         )
 
     async def login(self) -> ProviderStatus:
@@ -47,14 +48,10 @@ class SessionProviderAdapter(ProviderAdapter):
         request: Mapping[str, Any],
     ) -> AsyncIterator[Mapping[str, Any]]:
         self.requests.append(dict(request))
-        provider_session_id = str(
-            request.get("provider_session_id") or "provider-session-test"
-        )
         yield {
             "type": "response.started",
             "data": {
                 "provider": self.name,
-                "provider_session_id": provider_session_id,
                 "model": request.get("model"),
             },
         }
@@ -62,7 +59,7 @@ class SessionProviderAdapter(ProviderAdapter):
         yield {"type": "response.completed", "data": {"status": "completed"}}
 
 
-class SlowProviderAdapter(SessionProviderAdapter):
+class SlowProviderAdapter(StatelessProviderAdapter):
     def __init__(self) -> None:
         super().__init__()
         self.started = asyncio.Event()
@@ -78,7 +75,6 @@ class SlowProviderAdapter(SessionProviderAdapter):
                 "type": "response.started",
                 "data": {
                     "provider": self.name,
-                    "provider_session_id": "provider-session-slow",
                 },
             }
             self.started.set()
@@ -95,12 +91,12 @@ class SDKTests(unittest.IsolatedAsyncioTestCase):
             runtime_dir=runtime_dir,
             socket_path=runtime_dir / "subauth.sock",
         )
-        self.adapter = SessionProviderAdapter()
+        self.adapter = StatelessProviderAdapter()
         registry = ProviderRegistry(
             [
                 self.adapter,
-                StubProviderAdapter("claude", "sessions unavailable"),
-                StubProviderAdapter("gemini", "sessions unavailable"),
+                StubProviderAdapter("claude", "unavailable"),
+                StubProviderAdapter("gemini", "unavailable"),
             ]
         )
         self.daemon = SubAuthDaemon(settings=self.settings, registry=registry)
@@ -121,52 +117,49 @@ class SDKTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.text, "SDK_OK")
         self.assertTrue(result.request_id)
 
-    async def test_session_binds_and_reuses_provider_session(self) -> None:
-        session = await self.client.sessions.create(
-            provider="openai",
-            model="test-model",
-            system="Be concise",
-        )
-
+    async def test_each_request_is_independent(self) -> None:
         first = await self.client.responses.create(
             provider="openai",
             input="First",
-            session=session,
+            model="test-model",
+            system="Be concise",
         )
-        stored = await self.client.sessions.retrieve(session.id)
         second = await self.client.responses.create(
             provider="openai",
             input="Second",
-            session=stored,
         )
 
         self.assertEqual(first.text, "SDK_OK")
         self.assertEqual(second.text, "SDK_OK")
-        self.assertEqual(stored.provider_session_id, "provider-session-test")
+        self.assertNotEqual(first.request_id, second.request_id)
         self.assertEqual(self.adapter.requests[0]["model"], "test-model")
         self.assertEqual(self.adapter.requests[0]["system"], "Be concise")
-        self.assertEqual(
-            self.adapter.requests[1]["provider_session_id"],
-            "provider-session-test",
+        self.assertNotIn("session_id", self.adapter.requests[0])
+        self.assertNotIn("provider_session_id", self.adapter.requests[1])
+
+    async def test_continuation_handles_are_rejected(self) -> None:
+        raw_client = SubAuthClient(self.settings, auto_start=False)
+
+        response = await raw_client.request(
+            "responses.create",
+            {
+                "provider": "openai",
+                "input": "Continue",
+                "thread_id": "provider-thread",
+            },
         )
 
-    async def test_unsupported_provider_session_is_explicit_error(self) -> None:
-        with self.assertRaises(SubAuthAPIError) as raised:
-            await self.client.sessions.create(provider="claude")
+        self.assertEqual(
+            response["error"]["code"],
+            "stateful_context_not_supported",
+        )
 
-        self.assertEqual(raised.exception.code, "sessions_not_supported")
+    async def test_session_protocol_methods_are_not_exposed(self) -> None:
+        raw_client = SubAuthClient(self.settings, auto_start=False)
 
-    async def test_session_rejects_provider_mismatch(self) -> None:
-        session = await self.client.sessions.create(provider="openai")
+        response = await raw_client.request("sessions.create", {"provider": "openai"})
 
-        with self.assertRaises(SubAuthAPIError) as raised:
-            await self.client.responses.create(
-                provider="claude",
-                input="Wrong provider",
-                session=session,
-            )
-
-        self.assertEqual(raised.exception.code, "session_provider_mismatch")
+        self.assertEqual(response["error"]["code"], "method_not_found")
 
     async def test_stream_can_be_cancelled_by_request_id(self) -> None:
         slow = SlowProviderAdapter()
@@ -191,16 +184,6 @@ class SDKTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(cancellation_requested)
         self.assertTrue(slow.cancelled.is_set())
         self.assertEqual(events[-1].type, "response.cancelled")
-
-    async def test_session_list_and_delete(self) -> None:
-        session = await self.client.sessions.create(provider="openai")
-
-        sessions = await self.client.sessions.list()
-        deleted = await self.client.sessions.delete(session.id)
-
-        self.assertEqual([item.id for item in sessions], [session.id])
-        self.assertTrue(deleted)
-
 
 if __name__ == "__main__":
     unittest.main()

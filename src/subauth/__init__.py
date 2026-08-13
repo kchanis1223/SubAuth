@@ -6,7 +6,6 @@ from subauth.sdk import (
     ResponseEvent,
     ResponseResult,
     ResponseStream,
-    Session,
     SubAuthAPIError,
     SubAuthError,
 )
@@ -17,7 +16,6 @@ __all__ = [
     "ResponseEvent",
     "ResponseResult",
     "ResponseStream",
-    "Session",
     "SubAuthAPIError",
     "SubAuthError",
 ]

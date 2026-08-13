@@ -36,7 +36,6 @@ class ProviderCapabilities:
     web_search: bool = False
     hosted_code_execution: bool = False
     function_tools: bool = False
-    sessions: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

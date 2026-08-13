@@ -1,4 +1,4 @@
-# Python SDK and common request lifecycle
+# Python SDK and stateless request lifecycle
 
 ## Public entry point
 
@@ -11,10 +11,9 @@ from subauth import AsyncSubAuth
 client = AsyncSubAuth()
 ```
 
-The SDK has two resources:
+The SDK has one resource:
 
 - `client.responses`: create, stream, and cancel response requests
-- `client.sessions`: create, retrieve, list, and delete common sessions
 
 `SubAuthClient` remains the low-level protocol client for integrations that
 need raw dictionaries.
@@ -38,25 +37,20 @@ generator cleanup.
 returns a typed `ResponseResult`. A provider failure raises `SubAuthAPIError`
 with a stable SubAuth error code.
 
-## Sessions
+## Stateless contract
 
-Common sessions have a SubAuth ID and may bind a provider-native session ID.
-They can carry default model and system instruction values. The system text is
-kept inside the daemon and is represented in session metadata only as
-`has_system_instruction`.
+SubAuth does not create or retain application sessions, conversation history,
+or resumable provider handles. The main service owns user/session identity and
+its canonical conversation history. For a multi-turn experience, it constructs
+each input from the context that should be visible to that turn.
 
-For OpenAI, the first turn binds the common session to an ephemeral Codex thread
-and later turns target that active thread in the same App Server process. A
-session allows one active request at a time; parallel turns return
-`session_busy`.
-
-Current session storage is intentionally in-memory:
-
-- daemon restart invalidates all common session IDs
-- no conversation content is written by SubAuth
-- provider runtimes may apply their own storage behavior
-- Claude and Gemini session creation is rejected until their isolated runtime
-  contracts can provide genuine resume semantics
+Each `responses.create` call starts a fresh provider runtime context. A provider
+may still report a thread, session, or conversation ID in event metadata. Such
+IDs exist for diagnostics only; SubAuth never accepts them as continuation
+handles. Supplying `session_id`, `provider_session_id`,
+`thread_id`, or `conversation_id` to `responses.create` returns
+`stateful_context_not_supported`. The daemon retains only an active task keyed
+by `request_id`, and removes it at the terminal event.
 
 ## Raw protocol methods
 
@@ -64,10 +58,6 @@ Current session storage is intentionally in-memory:
 | --- | --- |
 | `responses.create` | Stream a normalized provider response |
 | `responses.cancel` | Cancel an active request by request ID |
-| `sessions.create` | Create a provider-backed common session |
-| `sessions.get` | Retrieve session metadata |
-| `sessions.list` | List daemon-memory sessions |
-| `sessions.delete` | Delete an inactive session |
 
 The protocol remains version 1. These methods extend the method surface without
 changing JSON framing.
