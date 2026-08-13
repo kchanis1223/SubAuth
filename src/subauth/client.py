@@ -57,10 +57,16 @@ class SubAuthClient:
         self,
         method: str,
         params: Mapping[str, Any] | None = None,
+        *,
+        request_id: str | None = None,
     ) -> dict[str, Any]:
         reader, writer = await self._connect()
         try:
-            request = Request(id=str(uuid.uuid4()), method=method, params=params or {})
+            request = Request(
+                id=request_id or str(uuid.uuid4()),
+                method=method,
+                params=params or {},
+            )
             writer.write(encode_message(request))
             await writer.drain()
             payload = await reader.readline()
@@ -75,9 +81,15 @@ class SubAuthClient:
         self,
         method: str,
         params: Mapping[str, Any] | None = None,
+        *,
+        request_id: str | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         reader, writer = await self._connect()
-        request = Request(id=str(uuid.uuid4()), method=method, params=params or {})
+        request = Request(
+            id=request_id or str(uuid.uuid4()),
+            method=method,
+            params=params or {},
+        )
         try:
             writer.write(encode_message(request))
             await writer.drain()

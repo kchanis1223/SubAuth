@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from typing import Any, AsyncIterator, Mapping
 
 from subauth.providers.base import (
@@ -183,19 +184,29 @@ class OpenAIAdapter(ProviderAdapter):
         if isinstance(system, str) and system:
             thread_params["baseInstructions"] = system
 
+        thread_id: str | None = None
+        turn_id: str | None = None
         try:
-            thread_result = await self._app_server.request("thread/start", thread_params)
-            thread = thread_result.get("thread")
-            if not isinstance(thread, dict) or not isinstance(thread.get("id"), str):
-                raise ValueError("Codex App Server did not return a thread id")
-            thread_id = thread["id"]
-            selected_model = thread_result.get("model")
+            provider_session_id = request.get("provider_session_id")
+            if isinstance(provider_session_id, str) and provider_session_id:
+                thread_id = provider_session_id
+                selected_model = (
+                    model if isinstance(model, str) and model != "auto" else None
+                )
+            else:
+                thread_result = await self._app_server.request("thread/start", thread_params)
+                thread = thread_result.get("thread")
+                if not isinstance(thread, dict) or not isinstance(thread.get("id"), str):
+                    raise ValueError("Codex App Server did not return a thread id")
+                thread_id = thread["id"]
+                selected_model = thread_result.get("model")
             yield {
                 "type": "response.started",
                 "data": {
                     "provider": self.name,
                     "transport": TransportMode.OFFICIAL_RUNTIME.value,
                     "thread_id": thread_id,
+                    "provider_session_id": thread_id,
                     "model": selected_model,
                 },
             }
@@ -272,6 +283,19 @@ class OpenAIAdapter(ProviderAdapter):
                         return
             finally:
                 self._app_server.unsubscribe(notifications)
+        except asyncio.CancelledError:
+            if thread_id is not None and turn_id is not None:
+                with contextlib.suppress(CodexAppServerError, TimeoutError):
+                    await asyncio.shield(
+                        asyncio.wait_for(
+                            self._app_server.request(
+                                "turn/interrupt",
+                                {"threadId": thread_id, "turnId": turn_id},
+                            ),
+                            timeout=2.0,
+                        )
+                    )
+            raise
         except (CodexAppServerError, TimeoutError, ValueError) as error:
             yield {
                 "type": "response.failed",

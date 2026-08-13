@@ -199,3 +199,59 @@ are not logged. Sensitive field names, bearer values, token assignments, and
 known runtime credentials are redacted before formatting. View the current log
 tail with `subauth daemon logs`; provider credentials are never intentionally
 included in client responses or logs.
+
+## Python SDK
+
+SubAuth exposes a typed asynchronous Python SDK while keeping the low-level
+Unix-socket client available. Run source-tree examples with `PYTHONPATH=src`:
+
+```python
+import asyncio
+from subauth import AsyncSubAuth
+
+async def main():
+    client = AsyncSubAuth()
+    result = await client.responses.create(
+        provider="openai",
+        input="Reply exactly: SDK_OK",
+    )
+    print(result.text)
+
+asyncio.run(main())
+```
+
+Streaming returns a `ResponseStream` whose request ID is available before the
+request starts. Calling `cancel()` sends cancellation over a separate socket
+and stops the active provider worker:
+
+```python
+stream = client.responses.stream(provider="openai", input="Explain in detail")
+async with stream:
+    async for event in stream:
+        if event.type == "output.text.delta":
+            print(event.data["delta"], end="")
+        if should_stop:
+            await stream.cancel()
+```
+
+OpenAI supports resumable common sessions through Codex threads:
+
+```python
+session = await client.sessions.create(
+    provider="openai",
+    model="auto",
+    system="Be concise.",
+)
+await client.responses.create(provider="openai", input="Remember 17", session=session)
+answer = await client.responses.create(
+    provider="openai",
+    input="What number did I ask you to remember?",
+    session=session,
+)
+```
+
+Sessions currently live in daemon memory and are invalidated by daemon restart.
+Claude and Gemini advertise `sessions: false`, so session creation for those
+transports returns `sessions_not_supported` instead of simulating continuity.
+See [`examples/python_sdk.py`](examples/python_sdk.py) and
+[`docs/sdk.md`](docs/sdk.md).

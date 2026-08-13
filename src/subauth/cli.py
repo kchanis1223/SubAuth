@@ -38,6 +38,21 @@ def build_parser() -> argparse.ArgumentParser:
     logs = daemon_commands.add_parser("logs")
     logs.add_argument("--lines", type=int, default=100)
 
+    session = subparsers.add_parser("session", help="manage provider sessions")
+    session_commands = session.add_subparsers(dest="session_command", required=True)
+    session_create = session_commands.add_parser("create")
+    session_create.add_argument("provider", choices=("openai", "claude", "gemini"))
+    session_create.add_argument("--model", default="auto")
+    session_create.add_argument("--system")
+    session_commands.add_parser("list")
+    session_get = session_commands.add_parser("get")
+    session_get.add_argument("session_id")
+    session_delete = session_commands.add_parser("delete")
+    session_delete.add_argument("session_id")
+
+    cancel = subparsers.add_parser("cancel", help="cancel an active response request")
+    cancel.add_argument("request_id")
+
     credential = subparsers.add_parser("credential", help="manage Keychain credentials")
     credential_commands = credential.add_subparsers(
         dest="credential_command", required=True
@@ -58,6 +73,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("prompt")
     run.add_argument("--model", default="auto")
     run.add_argument("--system")
+    run.add_argument("--session")
     return parser
 
 
@@ -118,11 +134,19 @@ async def _login(provider: str) -> int:
     return 0 if response.get("error") is None else 1
 
 
-async def _run(provider: str, prompt: str, model: str, system: str | None) -> int:
+async def _run(
+    provider: str,
+    prompt: str,
+    model: str,
+    system: str | None,
+    session_id: str | None,
+) -> int:
     _warn_provider_policy(provider)
     params = {"provider": provider, "input": prompt, "model": model}
     if system:
         params["system"] = system
+    if session_id:
+        params["session_id"] = session_id
     failed = False
     try:
         async for event in SubAuthClient(Settings.load()).stream("responses.create", params):
@@ -133,6 +157,21 @@ async def _run(provider: str, prompt: str, model: str, system: str | None) -> in
         print(f"SubAuth daemon is unavailable: {error}", file=sys.stderr)
         return 1
     return 1 if failed else 0
+
+
+async def _session(args: argparse.Namespace) -> int:
+    if args.session_command == "create":
+        params = {"provider": args.provider, "model": args.model}
+        if args.system:
+            params["system"] = args.system
+        return await _request("sessions.create", params)
+    if args.session_command == "list":
+        return await _request("sessions.list")
+    if args.session_command == "get":
+        return await _request("sessions.get", {"session_id": args.session_id})
+    if args.session_command == "delete":
+        return await _request("sessions.delete", {"session_id": args.session_id})
+    raise AssertionError(f"Unhandled session command: {args.session_command}")
 
 
 async def _daemon(command: str, lines: int = 100) -> int:
@@ -234,10 +273,24 @@ def main(argv: Sequence[str] | None = None) -> int:
         return asyncio.run(
             _credential(args.credential_command, args.provider, args.name)
         )
+    if args.command == "session":
+        return asyncio.run(_session(args))
+    if args.command == "cancel":
+        return asyncio.run(
+            _request("responses.cancel", {"request_id": args.request_id})
+        )
     if args.command == "probe":
         return asyncio.run(_request("providers.probe", {"provider": args.provider}))
     if args.command == "login":
         return asyncio.run(_login(args.provider))
     if args.command == "run":
-        return asyncio.run(_run(args.provider, args.prompt, args.model, args.system))
+        return asyncio.run(
+            _run(
+                args.provider,
+                args.prompt,
+                args.model,
+                args.system,
+                args.session,
+            )
+        )
     raise AssertionError(f"Unhandled command: {args.command}")

@@ -10,6 +10,7 @@ for line in sys.stdin:
     message = json.loads(line)
     request_id = message.get("id")
     method = message.get("method")
+    params = message.get("params") or {}
     if request_id is None:
         continue
     notifications = []
@@ -61,13 +62,21 @@ for line in sys.stdin:
             "thread": {"id": "thread-test"},
             "model": "test-model",
         }
+    elif method == "thread/resume":
+        result = {
+            "thread": {"id": params["threadId"]},
+            "model": "resumed-test-model",
+        }
+    elif method == "turn/interrupt":
+        result = {}
     elif method == "turn/start":
         result = {"turn": {"id": "turn-test", "items": [], "status": "inProgress"}}
+        thread_id = params["threadId"]
         notifications = [
             {
                 "method": "item/agentMessage/delta",
                 "params": {
-                    "threadId": "thread-test",
+                    "threadId": thread_id,
                     "turnId": "turn-test",
                     "itemId": "item-test",
                     "delta": "O",
@@ -76,7 +85,7 @@ for line in sys.stdin:
             {
                 "method": "item/agentMessage/delta",
                 "params": {
-                    "threadId": "thread-test",
+                    "threadId": thread_id,
                     "turnId": "turn-test",
                     "itemId": "item-test",
                     "delta": "K",
@@ -85,7 +94,7 @@ for line in sys.stdin:
             {
                 "method": "turn/completed",
                 "params": {
-                    "threadId": "thread-test",
+                    "threadId": thread_id,
                     "turn": {
                         "id": "turn-test",
                         "items": [],

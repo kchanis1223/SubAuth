@@ -85,6 +85,26 @@ class CodexAppServerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(events[0]["type"], "response.failed")
         self.assertEqual(events[0]["data"]["code"], "subscription_not_ready")
 
+    async def test_openai_reuses_active_provider_session(self) -> None:
+        worker = CodexAppServer((sys.executable, str(FIXTURE)))
+        adapter = OpenAIAdapter(worker)
+        self.addAsyncCleanup(adapter.close)
+
+        events = [
+            event
+            async for event in adapter.stream(
+                {
+                    "input": "Continue",
+                    "provider_session_id": "thread-existing",
+                    "model": "test-model",
+                }
+            )
+        ]
+
+        self.assertEqual(events[0]["data"]["thread_id"], "thread-existing")
+        self.assertEqual(events[0]["data"]["provider_session_id"], "thread-existing")
+        self.assertEqual(events[0]["data"]["model"], "test-model")
+
 
 if __name__ == "__main__":
     unittest.main()

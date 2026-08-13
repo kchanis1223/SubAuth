@@ -41,6 +41,9 @@ captured with all credentials redacted.
 - client-triggered lazy daemon startup: implemented
 - macOS Keychain vault for Claude setup-token: implemented
 - token-redacted structured daemon logs: implemented
+- typed asynchronous Python SDK: implemented
+- common request cancellation: implemented
+- common daemon-memory sessions: implemented and live verified for OpenAI Codex threads
 
 ## Phase 1: macOS daemon foundation
 
@@ -73,14 +76,22 @@ without Google authorization.
 
 ## Phase 3: common response API
 
-- text streaming
+- text streaming (implemented)
 - multimodal input
 - files
 - hosted web search and code execution
 - main-service function-tool round trips
-- sessions and cancellation
+- sessions and cancellation (OpenAI sessions and all-provider cancellation implemented)
 - structured output
 - optional OpenAI-compatible HTTP shim
+
+## Phase 3.5: model and effort profiles
+
+- interactive initial provider configuration
+- provider default and named application profiles
+- request > session > profile > runtime precedence
+- provider-specific model and effort capability validation
+- requested/effective setting metadata with explicit fallback reasons
 
 ## Phase 4: API transition
 
