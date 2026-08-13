@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 
+from subauth.credentials import CredentialRef, NullCredentialVault  # noqa: E402
 from subauth.providers.base import AuthState, SupportLevel, TransportMode  # noqa: E402
 from subauth.providers.claude import ClaudeAdapter  # noqa: E402
 from subauth.providers.claude_runtime import ClaudeCodeRuntime  # noqa: E402
@@ -15,9 +16,29 @@ from subauth.providers.claude_runtime import ClaudeCodeRuntime  # noqa: E402
 FIXTURE = Path(__file__).parent / "fixtures" / "fake_claude.py"
 
 
+class FakeCredentialVault(NullCredentialVault):
+    def __init__(self, value: str | None) -> None:
+        self.value = value
+
+    @property
+    def available(self) -> bool:
+        return True
+
+    async def contains(self, credential: CredentialRef) -> bool:
+        del credential
+        return self.value is not None
+
+    async def get(self, credential: CredentialRef) -> str | None:
+        del credential
+        return self.value
+
+
 class ClaudeRuntimeTests(unittest.IsolatedAsyncioTestCase):
     def runtime(self) -> ClaudeCodeRuntime:
-        return ClaudeCodeRuntime((sys.executable, str(FIXTURE)))
+        return ClaudeCodeRuntime(
+            (sys.executable, str(FIXTURE)),
+            credential_vault=NullCredentialVault(),
+        )
 
     async def test_probe_reports_subscription_without_identity_fields(self) -> None:
         adapter = ClaudeAdapter(self.runtime())
@@ -52,7 +73,28 @@ class ClaudeRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(status.auth_state, AuthState.READY)
         self.assertEqual(status.metadata["account"]["auth_method"], "oauth_token")
         self.assertEqual(status.metadata["account"]["credential_source"], "setup-token")
+        self.assertEqual(
+            status.metadata["account"]["credential_storage"],
+            "process-environment",
+        )
         self.assertNotIn("secret-setup-token", repr(status.to_dict()))
+
+    async def test_probe_injects_setup_token_from_keychain_vault(self) -> None:
+        runtime = ClaudeCodeRuntime(
+            (sys.executable, str(FIXTURE)),
+            credential_vault=FakeCredentialVault("secret-keychain-token"),
+        )
+
+        status = await ClaudeAdapter(runtime).probe()
+
+        self.assertEqual(status.auth_state, AuthState.READY)
+        self.assertEqual(status.metadata["account"]["auth_method"], "oauth_token")
+        self.assertEqual(status.metadata["account"]["credential_source"], "setup-token")
+        self.assertEqual(
+            status.metadata["account"]["credential_storage"],
+            "subauth-keychain",
+        )
+        self.assertNotIn("secret-keychain-token", repr(status.to_dict()))
 
     async def test_stream_normalizes_partial_messages(self) -> None:
         adapter = ClaudeAdapter(self.runtime())
@@ -77,6 +119,26 @@ class ClaudeRuntimeTests(unittest.IsolatedAsyncioTestCase):
             "CLAUDE_OK",
         )
         self.assertIn("policy_warning", events[0]["data"])
+
+    async def test_runtime_error_redacts_injected_setup_token(self) -> None:
+        secret = "secret-runtime-token"
+        with patch.dict(
+            os.environ,
+            {
+                "CLAUDE_CODE_OAUTH_TOKEN": secret,
+                "FAKE_CLAUDE_ECHO_TOKEN_ERROR": "1",
+            },
+        ):
+            events = [
+                event
+                async for event in ClaudeAdapter(self.runtime()).stream(
+                    {"input": "Trigger error"}
+                )
+            ]
+
+        self.assertEqual(events[-1]["type"], "response.failed")
+        self.assertNotIn(secret, repr(events))
+        self.assertIn("[REDACTED]", repr(events))
 
 
 if __name__ == "__main__":

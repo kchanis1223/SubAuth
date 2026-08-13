@@ -65,6 +65,12 @@ if "-p" in args and "stream-json" in args:
     if args[tools_index + 1] != "":
         print("tools were not disabled", file=sys.stderr)
         raise SystemExit(2)
+    if os.environ.get("FAKE_CLAUDE_ECHO_TOKEN_ERROR"):
+        print(
+            f"runtime failure: {os.environ.get('CLAUDE_CODE_OAUTH_TOKEN')}",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
     messages = [
         {
             "type": "system",

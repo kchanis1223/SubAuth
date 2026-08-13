@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, AsyncIterator, Mapping
 
+from subauth.logging import redact_text
 from subauth.providers.base import (
     AuthState,
     ProviderAdapter,
@@ -33,6 +34,7 @@ class ClaudeAdapter(ProviderAdapter):
         try:
             version = await self._runtime.version()
             auth = await self._runtime.auth_status()
+            setup_token_storage = await self._runtime.setup_token_storage()
         except ClaudeRuntimeError as error:
             return self._unavailable(str(error))
 
@@ -48,7 +50,7 @@ class ClaudeAdapter(ProviderAdapter):
         setup_token_ready = (
             logged_in
             and auth_method == "oauth_token"
-            and self._runtime.setup_token_configured
+            and setup_token_storage is not None
         )
         subscription_ready = stored_subscription_ready or setup_token_ready
         if setup_token_ready:
@@ -98,6 +100,9 @@ class ClaudeAdapter(ProviderAdapter):
                 "account": {
                     "auth_method": auth_method,
                     "credential_source": credential_source,
+                    "credential_storage": (
+                        setup_token_storage if setup_token_ready else "claude-code-managed"
+                    ),
                     "subscription_type": subscription_type,
                 },
                 "policy": {
@@ -232,7 +237,7 @@ class ClaudeAdapter(ProviderAdapter):
             "type": "response.failed",
             "data": {
                 "code": code,
-                "message": message,
+                "message": redact_text(message),
                 "provider": self.name,
                 "policy_warning": CLAUDE_POLICY_WARNING,
             },

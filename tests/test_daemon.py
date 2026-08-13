@@ -93,6 +93,16 @@ class DaemonTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response["result"]["status"], "ok")
         self.assertEqual(starts, 1)
 
+    def test_protocol_errors_redact_credential_assignments(self) -> None:
+        response = self.daemon._error(
+            "request-test",
+            "provider_error",
+            "CLAUDE_CODE_OAUTH_TOKEN=must-not-leak",
+        )
+
+        self.assertNotIn("must-not-leak", repr(response.error))
+        self.assertIn("[REDACTED]", repr(response.error))
+
 
 if __name__ == "__main__":
     unittest.main()

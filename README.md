@@ -118,8 +118,25 @@ token outside SubAuth, export it as `CLAUDE_CODE_OAUTH_TOKEN` before starting a
 foreground daemon, and then use the same `probe` and `run` commands. SubAuth
 checks only that the variable is present; it never returns or persists the
 token. The LaunchAgent deliberately does not copy shell-only secrets into its
-plist. Use normal Claude.ai stored login for background-service operation;
-secure setup-token injection is a later Keychain-vault phase.
+plist. Use normal Claude.ai stored login for background-service operation, or
+store a setup token in the SubAuth Keychain vault:
+
+```bash
+PYTHONPATH=src python3 -m subauth credential set claude setup-token
+PYTHONPATH=src python3 -m subauth credential status claude setup-token
+```
+
+`credential set` delegates input to the macOS Keychain password prompt. The
+token is not placed in a command-line argument, plist, log, or SubAuth protocol
+message. The daemon reads it immediately before launching Claude Code and
+injects it only into that isolated child process. Remove it with:
+
+```bash
+PYTHONPATH=src python3 -m subauth credential delete claude setup-token
+```
+
+The Keychain vault does not change Anthropic's policy boundary: setup-token
+routing remains experimental and limited to development or small previews.
 
 > **Policy warning:** Anthropic says product and service developers should use
 > API-key or supported cloud-provider authentication and does not permit
@@ -173,3 +190,12 @@ The live smoke test completed with `GEMINI_OK` on `gemini-3.6-flash-high`.
 Antigravity exposed its agent tool surface and consumed 18,410 input tokens for
 that minimal request, so this transport is substantially heavier than a direct
 text API and remains unsuitable for high-volume use.
+
+## Logs and credential safety
+
+Daemon logs are newline-delimited JSON and contain lifecycle, request ID,
+method, provider, completion, and error metadata. Prompt text and model output
+are not logged. Sensitive field names, bearer values, token assignments, and
+known runtime credentials are redacted before formatting. View the current log
+tail with `subauth daemon logs`; provider credentials are never intentionally
+included in client responses or logs.

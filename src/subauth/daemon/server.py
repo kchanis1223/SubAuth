@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 import os
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
 from subauth.config import Settings
+from subauth.logging import get_logger, log_event, redact_text
 from subauth.protocol.models import (
     PROTOCOL_VERSION,
     Event,
@@ -28,6 +30,7 @@ class SubAuthDaemon:
         self.settings = settings or Settings.load()
         self.registry = registry or default_registry()
         self._server: asyncio.AbstractServer | None = None
+        self._logger = get_logger()
 
     async def start(self) -> None:
         self.settings.runtime_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -38,6 +41,13 @@ class SubAuthDaemon:
             path=str(self.settings.socket_path),
         )
         os.chmod(self.settings.socket_path, 0o600)
+        log_event(
+            self._logger,
+            logging.INFO,
+            "daemon.started",
+            socket=str(self.settings.socket_path),
+            protocol=PROTOCOL_VERSION,
+        )
 
     async def serve_forever(self) -> None:
         if self._server is None:
@@ -47,6 +57,7 @@ class SubAuthDaemon:
             await self._server.serve_forever()
 
     async def close(self) -> None:
+        was_running = self._server is not None
         if self._server is not None:
             self._server.close()
             await self._server.wait_closed()
@@ -57,6 +68,8 @@ class SubAuthDaemon:
         )
         with contextlib.suppress(FileNotFoundError):
             self.settings.socket_path.unlink()
+        if was_running:
+            log_event(self._logger, logging.INFO, "daemon.stopped")
 
     async def _remove_stale_socket(self) -> None:
         if not self.settings.socket_path.exists():
@@ -87,12 +100,29 @@ class SubAuthDaemon:
                     await writer.drain()
                     continue
                 assert request is not None
+                provider = request.params.get("provider")
+                log_event(
+                    self._logger,
+                    logging.INFO,
+                    "request.received",
+                    request_id=request.id,
+                    method=request.method,
+                    provider=provider if isinstance(provider, str) else None,
+                )
                 if request.method == "responses.create":
                     await self._stream_response(request, writer)
                 else:
                     response = await self.dispatch(request)
                     writer.write(encode_message(response))
                     await writer.drain()
+                    log_event(
+                        self._logger,
+                        logging.INFO,
+                        "request.completed",
+                        request_id=request.id,
+                        method=request.method,
+                        error_code=(response.error or {}).get("code"),
+                    )
         finally:
             writer.close()
             await writer.wait_closed()
@@ -142,8 +172,29 @@ class SubAuthDaemon:
                 )
             )
             await writer.drain()
+            log_event(
+                self._logger,
+                logging.INFO,
+                "request.completed",
+                request_id=request.id,
+                method=request.method,
+                provider=name,
+                events=event_count,
+            )
         except Exception as error:
-            writer.write(encode_message(self._error(request.id, "provider_error", str(error))))
+            safe_error = redact_text(str(error))
+            log_event(
+                self._logger,
+                logging.ERROR,
+                "request.failed",
+                request_id=request.id,
+                method=request.method,
+                provider=name,
+                error=safe_error,
+            )
+            writer.write(
+                encode_message(self._error(request.id, "provider_error", safe_error))
+            )
             await writer.drain()
 
     async def dispatch(self, request: Request) -> Response:
@@ -182,4 +233,7 @@ class SubAuthDaemon:
 
     @staticmethod
     def _error(request_id: str, code: str, message: str) -> Response:
-        return Response(id=request_id, error={"code": code, "message": message})
+        return Response(
+            id=request_id,
+            error={"code": code, "message": redact_text(message)},
+        )

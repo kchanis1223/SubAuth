@@ -22,6 +22,20 @@ local SubAuth socket, SubAuth executes it when the selected provider is usable.
 4. Provider adapters convert common requests and events.
 5. The client SDK hides daemon startup and wire-protocol details.
 
+## Credential broker
+
+Provider-owned stored login remains the first choice for official runtimes. For
+credentials that must otherwise live in a shell environment, the credential
+broker stores a generic-password item in the current user's macOS Keychain.
+Items use service `io.github.kchanis1223.subauth.credentials` and a non-secret
+provider/credential account name.
+
+Interactive storage is delegated to the macOS `security` prompt so credential
+data does not appear in SubAuth command arguments. The daemon retrieves a value
+only when preparing the matching provider child environment. Plists, protocol
+messages, status output, and structured logs expose presence and storage type
+only. The first implemented broker entry is Claude `setup-token`.
+
 ## Transport preference
 
 Every provider can implement these transports:
@@ -44,3 +58,8 @@ The initial daemon binds only to a per-user Unix domain socket. It does not
 listen on TCP. Credentials never appear in main-service responses, logs, or
 provider-neutral events. Local shell and filesystem tools are outside the V1
 daemon boundary.
+
+Daemon logs are newline-delimited JSON. They record request identifiers,
+methods, provider selection, lifecycle, completion, and sanitized errors, but
+not prompt or response content. Sensitive keys and recognizable credential
+assignments are redacted before serialization.

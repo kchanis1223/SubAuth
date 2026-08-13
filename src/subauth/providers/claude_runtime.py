@@ -8,6 +8,14 @@ import tempfile
 from collections.abc import AsyncIterator, Sequence
 from typing import Any
 
+from subauth.credentials import (
+    CLAUDE_SETUP_TOKEN,
+    CredentialVault,
+    CredentialVaultError,
+    default_credential_vault,
+)
+from subauth.logging import redact_text
+
 
 class ClaudeRuntimeError(RuntimeError):
     """Base error raised by the Claude Code runtime adapter."""
@@ -46,11 +54,13 @@ class ClaudeCodeRuntime:
         probe_timeout: float = 10.0,
         login_timeout: float = 300.0,
         request_timeout: float = 300.0,
+        credential_vault: CredentialVault | None = None,
     ) -> None:
         self._command = tuple(command) if command is not None else None
         self._probe_timeout = probe_timeout
         self._login_timeout = login_timeout
         self._request_timeout = request_timeout
+        self._credential_vault = credential_vault or default_credential_vault()
 
     @property
     def executable(self) -> str | None:
@@ -62,13 +72,23 @@ class ClaudeCodeRuntime:
     def available(self) -> bool:
         return self.executable is not None
 
-    @property
-    def setup_token_configured(self) -> bool:
-        """Return whether the official setup-token environment variable is present."""
-        return bool(os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"))
+    async def setup_token_storage(self) -> str | None:
+        """Return the setup-token location without reading or returning its value."""
+        if os.environ.get(CLAUDE_SETUP_TOKEN.environment_variable):
+            return "process-environment"
+        try:
+            if await self._credential_vault.contains(CLAUDE_SETUP_TOKEN):
+                return "subauth-keychain"
+        except CredentialVaultError as error:
+            raise ClaudeRuntimeError("Could not inspect the SubAuth credential vault") from error
+        return None
 
     async def version(self) -> str:
-        result = await self._run_capture(("--version",), timeout=self._probe_timeout)
+        result = await self._run_capture(
+            ("--version",),
+            timeout=self._probe_timeout,
+            include_credentials=False,
+        )
         return result.strip()
 
     async def auth_status(self) -> dict[str, Any]:
@@ -91,6 +111,7 @@ class ClaudeCodeRuntime:
         await self._run_capture(
             ("auth", "login", "--claudeai"),
             timeout=self._login_timeout,
+            include_credentials=False,
         )
 
     async def stream(
@@ -124,7 +145,8 @@ class ClaudeCodeRuntime:
             args.extend(("--system-prompt", system))
 
         command = (*self._resolve_command(), *args)
-        environment = self._subscription_environment()
+        environment = await self._subscription_environment()
+        setup_token = environment.get(CLAUDE_SETUP_TOKEN.environment_variable)
         with tempfile.TemporaryDirectory(prefix="subauth-claude-") as workdir:
             try:
                 process = await asyncio.create_subprocess_exec(
@@ -156,7 +178,10 @@ class ClaudeCodeRuntime:
                     stderr = (await stderr_task).decode("utf-8", errors="replace").strip()
                     if return_code != 0:
                         detail = stderr or f"exit status {return_code}"
-                        raise ClaudeRuntimeError(f"Claude Code request failed: {detail}")
+                        raise ClaudeRuntimeError(
+                            "Claude Code request failed: "
+                            f"{redact_text(detail, (setup_token,))}"
+                        )
             except TimeoutError as error:
                 raise ClaudeRuntimeError("Claude Code request timed out") from error
             finally:
@@ -180,12 +205,17 @@ class ClaudeCodeRuntime:
         *,
         timeout: float,
         allow_failure: bool = False,
+        include_credentials: bool = True,
     ) -> str:
         command = (*self._resolve_command(), *args)
+        environment = await self._subscription_environment(
+            include_credentials=include_credentials
+        )
+        setup_token = environment.get(CLAUDE_SETUP_TOKEN.environment_variable)
         try:
             process = await asyncio.create_subprocess_exec(
                 *command,
-                env=self._subscription_environment(),
+                env=environment,
                 stdin=asyncio.subprocess.DEVNULL,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
@@ -201,7 +231,9 @@ class ClaudeCodeRuntime:
         output = stdout.decode("utf-8", errors="replace").strip()
         if process.returncode != 0 and not allow_failure:
             detail = stderr.decode("utf-8", errors="replace").strip() or output
-            raise ClaudeRuntimeError(f"Claude Code command failed: {detail}")
+            raise ClaudeRuntimeError(
+                f"Claude Code command failed: {redact_text(detail, (setup_token,))}"
+            )
         if not output:
             output = stderr.decode("utf-8", errors="replace").strip()
         return output
@@ -214,11 +246,28 @@ class ClaudeCodeRuntime:
             raise ClaudeRuntimeUnavailable("Claude Code is not installed or not on PATH")
         return (executable,)
 
-    def _subscription_environment(self) -> dict[str, str]:
+    async def _subscription_environment(
+        self,
+        *,
+        include_credentials: bool = True,
+    ) -> dict[str, str]:
         environment = {
             key: value
             for key, value in os.environ.items()
             if key not in self._REMOVED_ENVIRONMENT_KEYS
         }
+        if include_credentials and not environment.get(
+            CLAUDE_SETUP_TOKEN.environment_variable
+        ):
+            try:
+                setup_token = await self._credential_vault.get(CLAUDE_SETUP_TOKEN)
+            except CredentialVaultError as error:
+                raise ClaudeRuntimeError(
+                    "Could not read the Claude setup-token from macOS Keychain"
+                ) from error
+            if setup_token:
+                environment[CLAUDE_SETUP_TOKEN.environment_variable] = setup_token
+        elif not include_credentials:
+            environment.pop(CLAUDE_SETUP_TOKEN.environment_variable, None)
         environment["CLAUDE_CODE_SAFE_MODE"] = "1"
         return environment

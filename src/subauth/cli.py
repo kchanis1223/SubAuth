@@ -11,8 +11,14 @@ from collections.abc import Sequence
 
 from subauth.client import SubAuthClient
 from subauth.config import Settings
+from subauth.credentials import (
+    CredentialVaultError,
+    MacOSKeychainVault,
+    resolve_credential,
+)
 from subauth.daemon.server import SubAuthDaemon
 from subauth.launchd import LaunchAgentError, LaunchAgentManager
+from subauth.logging import configure_structured_logging
 from subauth.providers.claude import CLAUDE_POLICY_WARNING
 from subauth.providers.gemini import GEMINI_POLICY_WARNING
 
@@ -32,6 +38,15 @@ def build_parser() -> argparse.ArgumentParser:
     logs = daemon_commands.add_parser("logs")
     logs.add_argument("--lines", type=int, default=100)
 
+    credential = subparsers.add_parser("credential", help="manage Keychain credentials")
+    credential_commands = credential.add_subparsers(
+        dest="credential_command", required=True
+    )
+    for command in ("set", "status", "delete"):
+        item = credential_commands.add_parser(command)
+        item.add_argument("provider", choices=("claude",))
+        item.add_argument("name", choices=("setup-token",))
+
     probe = subparsers.add_parser("probe", help="inspect one provider runtime and login state")
     probe.add_argument("provider", choices=("openai", "claude", "gemini"))
 
@@ -47,6 +62,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 async def _serve() -> int:
+    configure_structured_logging()
     daemon = SubAuthDaemon()
     stop_requested = asyncio.Event()
     loop = asyncio.get_running_loop()
@@ -55,7 +71,6 @@ async def _serve() -> int:
             loop.add_signal_handler(getattr(signal, name), stop_requested.set)
     try:
         await daemon.start()
-        print(f"SubAuth listening on {daemon.settings.socket_path}", flush=True)
         await stop_requested.wait()
     finally:
         await daemon.close()
@@ -149,6 +164,55 @@ async def _daemon(command: str, lines: int = 100) -> int:
     return 0
 
 
+async def _credential(command: str, provider: str, name: str) -> int:
+    vault = MacOSKeychainVault()
+    try:
+        credential = resolve_credential(provider, name)
+        if command == "set":
+            _warn_provider_policy(provider)
+            print(
+                "Enter the credential at the macOS Keychain password prompt. "
+                "The value is not passed through SubAuth arguments or stored in its plist.",
+                file=sys.stderr,
+            )
+            await vault.store_interactive(credential)
+            present = True
+        elif command == "status":
+            present = await vault.contains(credential)
+        elif command == "delete":
+            deleted = await vault.delete(credential)
+            print(
+                json.dumps(
+                    {
+                        "provider": provider,
+                        "credential": name,
+                        "deleted": deleted,
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+            return 0
+        else:
+            raise AssertionError(f"Unhandled credential command: {command}")
+    except CredentialVaultError as error:
+        print(f"SubAuth credential command failed: {error}", file=sys.stderr)
+        return 1
+    print(
+        json.dumps(
+            {
+                "provider": provider,
+                "credential": name,
+                "storage": "macos-keychain",
+                "present": present,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+    return 0
+
+
 def _warn_provider_policy(provider: str) -> None:
     if provider == "claude":
         print(f"WARNING: {CLAUDE_POLICY_WARNING}", file=sys.stderr)
@@ -166,6 +230,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         return asyncio.run(_request("providers.list"))
     if args.command == "daemon":
         return asyncio.run(_daemon(args.daemon_command, getattr(args, "lines", 100)))
+    if args.command == "credential":
+        return asyncio.run(
+            _credential(args.credential_command, args.provider, args.name)
+        )
     if args.command == "probe":
         return asyncio.run(_request("providers.probe", {"provider": args.provider}))
     if args.command == "login":

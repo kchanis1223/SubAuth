@@ -39,15 +39,17 @@ captured with all credentials redacted.
 - Antigravity tool-step termination: implemented; pre-execution suppression unavailable
 - macOS per-user LaunchAgent installation and lifecycle: implemented
 - client-triggered lazy daemon startup: implemented
+- macOS Keychain vault for Claude setup-token: implemented
+- token-redacted structured daemon logs: implemented
 
 ## Phase 1: macOS daemon foundation
 
 - Python 3.12+
 - per-user Unix domain socket
-- macOS Keychain credential vault
+- macOS Keychain credential vault (Claude setup-token implemented)
 - `launchd` installation and lazy startup (implemented)
 - provider worker lifecycle
-- token-redacted structured logs
+- token-redacted structured logs (implemented)
 - protocol version negotiation
 
 ## Phase 2: provider order
