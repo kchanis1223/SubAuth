@@ -33,6 +33,38 @@ python3 -m unittest discover -s tests -v
 PYTHONPATH=src python3 -m subauth serve
 ```
 
+### macOS background service
+
+Instead of keeping `serve` open in a terminal, install the per-user LaunchAgent:
+
+```bash
+PYTHONPATH=src python3 -m subauth daemon install
+PYTHONPATH=src python3 -m subauth daemon status
+```
+
+The job is loaded into the current user's `launchd` GUI domain and runs in that
+same user context, so the official provider CLIs retain access to their normal
+macOS Keychain sessions. The plist stores executable paths and configuration
+only; it does not copy provider credentials. `RunAtLoad` and `KeepAlive` are
+disabled. Any normal SubAuth client request starts the installed job on demand
+if its Unix socket is unavailable.
+
+Management commands are:
+
+```bash
+PYTHONPATH=src python3 -m subauth daemon start
+PYTHONPATH=src python3 -m subauth daemon stop
+PYTHONPATH=src python3 -m subauth daemon restart
+PYTHONPATH=src python3 -m subauth daemon logs --lines 100
+PYTHONPATH=src python3 -m subauth daemon uninstall
+```
+
+The generated LaunchAgent points at the current checkout and Python
+interpreter. Re-run `daemon install` after moving the repository or changing
+Python installations. Environment overrides such as `SUBAUTH_RUNTIME_DIR` and
+`SUBAUTH_SOCKET` intentionally disable automatic LaunchAgent startup so tests
+cannot accidentally contact the developer's real daemon.
+
 In another terminal:
 
 ```bash
@@ -82,10 +114,12 @@ PYTHONPATH=src python3 -m subauth run claude "Reply exactly: CLAUDE_OK"
 ```
 
 SubAuth also recognizes the official `claude setup-token` flow. Generate the
-token outside SubAuth, export it as `CLAUDE_CODE_OAUTH_TOKEN` before starting
-the daemon, and then use the same `probe` and `run` commands. SubAuth checks only
-that the variable is present; it never returns or persists the token. Native
-Keychain import and daemon installation are later phases.
+token outside SubAuth, export it as `CLAUDE_CODE_OAUTH_TOKEN` before starting a
+foreground daemon, and then use the same `probe` and `run` commands. SubAuth
+checks only that the variable is present; it never returns or persists the
+token. The LaunchAgent deliberately does not copy shell-only secrets into its
+plist. Use normal Claude.ai stored login for background-service operation;
+secure setup-token injection is a later Keychain-vault phase.
 
 > **Policy warning:** Anthropic says product and service developers should use
 > API-key or supported cloud-provider authentication and does not permit

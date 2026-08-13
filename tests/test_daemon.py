@@ -75,6 +75,24 @@ class DaemonTests(unittest.IsolatedAsyncioTestCase):
             ["response.started", "output.text.delta", "response.completed"],
         )
 
+    async def test_client_starts_daemon_on_first_connection(self) -> None:
+        await self.daemon.close()
+        starts = 0
+
+        async def starter() -> bool:
+            nonlocal starts
+            starts += 1
+            await self.daemon.start()
+            return True
+
+        response = await SubAuthClient(
+            self.settings,
+            starter=starter,
+        ).request("system.ping")
+
+        self.assertEqual(response["result"]["status"], "ok")
+        self.assertEqual(starts, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

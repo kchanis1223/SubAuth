@@ -37,13 +37,15 @@ captured with all credentials redacted.
 - Gemini API/Vertex environment fallback prevention: implemented
 - Antigravity AI-credit fallback refusal: implemented
 - Antigravity tool-step termination: implemented; pre-execution suppression unavailable
+- macOS per-user LaunchAgent installation and lifecycle: implemented
+- client-triggered lazy daemon startup: implemented
 
 ## Phase 1: macOS daemon foundation
 
 - Python 3.12+
 - per-user Unix domain socket
 - macOS Keychain credential vault
-- `launchd` installation and lazy startup
+- `launchd` installation and lazy startup (implemented)
 - provider worker lifecycle
 - token-redacted structured logs
 - protocol version negotiation

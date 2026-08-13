@@ -12,6 +12,7 @@ from collections.abc import Sequence
 from subauth.client import SubAuthClient
 from subauth.config import Settings
 from subauth.daemon.server import SubAuthDaemon
+from subauth.launchd import LaunchAgentError, LaunchAgentManager
 from subauth.providers.claude import CLAUDE_POLICY_WARNING
 from subauth.providers.gemini import GEMINI_POLICY_WARNING
 
@@ -23,6 +24,13 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("serve", help="run the local SubAuth daemon in the foreground")
     subparsers.add_parser("status", help="check whether the local daemon is available")
     subparsers.add_parser("providers", help="show provider adapter status")
+
+    daemon = subparsers.add_parser("daemon", help="manage the macOS LaunchAgent")
+    daemon_commands = daemon.add_subparsers(dest="daemon_command", required=True)
+    for command in ("install", "uninstall", "start", "stop", "restart", "status"):
+        daemon_commands.add_parser(command)
+    logs = daemon_commands.add_parser("logs")
+    logs.add_argument("--lines", type=int, default=100)
 
     probe = subparsers.add_parser("probe", help="inspect one provider runtime and login state")
     probe.add_argument("provider", choices=("openai", "claude", "gemini"))
@@ -112,6 +120,35 @@ async def _run(provider: str, prompt: str, model: str, system: str | None) -> in
     return 1 if failed else 0
 
 
+async def _daemon(command: str, lines: int = 100) -> int:
+    manager = LaunchAgentManager()
+    try:
+        if command == "install":
+            status = await manager.install()
+        elif command == "uninstall":
+            status = await manager.uninstall()
+        elif command == "start":
+            status = await manager.start()
+        elif command == "stop":
+            status = await manager.stop()
+        elif command == "restart":
+            status = await manager.restart()
+        elif command == "status":
+            status = await manager.status()
+        elif command == "logs":
+            print(json.dumps(manager.read_logs(lines), ensure_ascii=False, indent=2))
+            return 0
+        else:
+            raise AssertionError(f"Unhandled daemon command: {command}")
+    except (LaunchAgentError, ValueError) as error:
+        print(f"SubAuth daemon command failed: {error}", file=sys.stderr)
+        return 1
+    print(json.dumps(status.to_dict(), ensure_ascii=False, indent=2))
+    if command == "status":
+        return 0 if status.installed and status.loaded else 1
+    return 0
+
+
 def _warn_provider_policy(provider: str) -> None:
     if provider == "claude":
         print(f"WARNING: {CLAUDE_POLICY_WARNING}", file=sys.stderr)
@@ -127,6 +164,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return asyncio.run(_request("system.ping"))
     if args.command == "providers":
         return asyncio.run(_request("providers.list"))
+    if args.command == "daemon":
+        return asyncio.run(_daemon(args.daemon_command, getattr(args, "lines", 100)))
     if args.command == "probe":
         return asyncio.run(_request("providers.probe", {"provider": args.provider}))
     if args.command == "login":
