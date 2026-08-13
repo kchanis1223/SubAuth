@@ -23,7 +23,8 @@ implemented; they follow the capability-probe phase described in
 ## Development
 
 Python 3.12 or newer is required. The current foundation uses only the standard
-library, so it can be exercised without installing project dependencies.
+library, so it can be exercised without installing project dependencies. The
+OpenAI probe also requires a current Codex CLI on `PATH`.
 
 ```bash
 python3 -m unittest discover -s tests -v
@@ -35,8 +36,30 @@ In another terminal:
 ```bash
 PYTHONPATH=src python3 -m subauth status
 PYTHONPATH=src python3 -m subauth providers
+PYTHONPATH=src python3 -m subauth probe openai
 ```
+
+`probe openai` starts Codex App Server, reads the current account and model
+catalog through its official JSON-RPC interface, and reports whether a ChatGPT
+subscription is ready. It does not make a model inference request. If signed
+out, keep the daemon running and start the managed browser flow with:
+
+```bash
+PYTHONPATH=src python3 -m subauth login openai
+```
+
+Raw OpenAI access and refresh tokens are never read or returned by SubAuth.
+
+To make an explicit subscription-backed inference request, keep the daemon
+running and use:
+
+```bash
+PYTHONPATH=src python3 -m subauth run openai "Reply exactly: SUBAUTH_OK"
+```
+
+The command emits protocol-v1 JSON events as they arrive, including
+`response.started`, `output.text.delta`, and `response.completed`. This command
+does consume the developer's ChatGPT subscription allowance.
 
 The daemon listens on a per-user Unix domain socket by default. It does not
 perform end-user access control; the calling main service owns that concern.
-

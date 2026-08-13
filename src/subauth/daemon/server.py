@@ -3,11 +3,19 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
 from subauth.config import Settings
-from subauth.protocol.models import PROTOCOL_VERSION, Request, Response, decode_message, encode_message
+from subauth.protocol.models import (
+    PROTOCOL_VERSION,
+    Event,
+    Request,
+    Response,
+    decode_message,
+    encode_message,
+)
 from subauth.providers.registry import ProviderRegistry, default_registry
 
 
@@ -43,6 +51,10 @@ class SubAuthDaemon:
             self._server.close()
             await self._server.wait_closed()
             self._server = None
+        await asyncio.gather(
+            *(adapter.close() for adapter in self.registry.all()),
+            return_exceptions=True,
+        )
         with contextlib.suppress(FileNotFoundError):
             self.settings.socket_path.unlink()
 
@@ -69,27 +81,70 @@ class SubAuthDaemon:
     ) -> None:
         try:
             while payload := await reader.readline():
-                response = await self._dispatch_payload(payload)
-                writer.write(encode_message(response))
-                await writer.drain()
+                request, error = self._parse_payload(payload)
+                if error is not None:
+                    writer.write(encode_message(error))
+                    await writer.drain()
+                    continue
+                assert request is not None
+                if request.method == "responses.create":
+                    await self._stream_response(request, writer)
+                else:
+                    response = await self.dispatch(request)
+                    writer.write(encode_message(response))
+                    await writer.drain()
         finally:
             writer.close()
             await writer.wait_closed()
 
-    async def _dispatch_payload(self, payload: bytes) -> Response:
+    def _parse_payload(self, payload: bytes) -> tuple[Request | None, Response | None]:
         request_id = "unknown"
         try:
             request = Request.from_dict(decode_message(payload))
             request_id = request.id
             if request.protocol != PROTOCOL_VERSION:
-                return self._error(
+                return None, self._error(
                     request.id,
                     "unsupported_protocol",
                     f"Unsupported protocol version: {request.protocol}",
                 )
-            return await self.dispatch(request)
+            return request, None
         except (KeyError, TypeError, ValueError) as error:
-            return self._error(request_id, "invalid_request", str(error))
+            return None, self._error(request_id, "invalid_request", str(error))
+
+    async def _stream_response(
+        self,
+        request: Request,
+        writer: asyncio.StreamWriter,
+    ) -> None:
+        name = str(request.params.get("provider", ""))
+        try:
+            adapter = self.registry.get(name)
+        except KeyError as error:
+            writer.write(encode_message(self._error(request.id, "unknown_provider", str(error))))
+            await writer.drain()
+            return
+        event_count = 0
+        try:
+            async for provider_event in adapter.stream(request.params):
+                event_type = provider_event.get("type")
+                data = provider_event.get("data")
+                if not isinstance(event_type, str) or not isinstance(data, Mapping):
+                    continue
+                writer.write(
+                    encode_message(Event(request_id=request.id, type=event_type, data=data))
+                )
+                await writer.drain()
+                event_count += 1
+            writer.write(
+                encode_message(
+                    Response(id=request.id, result={"status": "finished", "events": event_count})
+                )
+            )
+            await writer.drain()
+        except Exception as error:
+            writer.write(encode_message(self._error(request.id, "provider_error", str(error))))
+            await writer.drain()
 
     async def dispatch(self, request: Request) -> Response:
         if request.method == "system.ping":
@@ -103,6 +158,14 @@ class SubAuthDaemon:
                 id=request.id,
                 result={"providers": [status.to_dict() for status in statuses]},
             )
+        if request.method == "providers.probe":
+            name = str(request.params.get("provider", ""))
+            try:
+                adapter = self.registry.get(name)
+            except KeyError as error:
+                return self._error(request.id, "unknown_provider", str(error))
+            status = await adapter.probe()
+            return Response(id=request.id, result=status.to_dict())
         if request.method == "providers.login":
             name = str(request.params.get("provider", ""))
             try:
@@ -120,4 +183,3 @@ class SubAuthDaemon:
     @staticmethod
     def _error(request_id: str, code: str, message: str) -> Response:
         return Response(id=request_id, error={"code": code, "message": message})
-

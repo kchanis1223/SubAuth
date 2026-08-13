@@ -18,6 +18,17 @@ Record results separately for official runtime and direct subscription
 transports. A provider implementation begins only after its probe fixtures are
 captured with all credentials redacted.
 
+### Current progress
+
+- OpenAI Codex App Server lifecycle: implemented
+- OpenAI managed ChatGPT account probe: implemented
+- OpenAI model and text/image capability discovery: implemented
+- OpenAI managed browser-login bootstrap: implemented
+- OpenAI subscription model inference: implemented
+- OpenAI normalized Unix-socket streaming: implemented
+- OpenAI tool-surface suppression audit: pending
+- Claude and Gemini probes: pending
+
 ## Phase 1: macOS daemon foundation
 
 - Python 3.12+
@@ -66,4 +77,3 @@ runtime equivalence.
 - stable versioned protocol framing
 - standard-library unit tests pass on Python 3.12+
 - no provider token exposed to the client contract
-

@@ -34,10 +34,13 @@ Every provider can implement these transports:
 The actual transport and its support level must be returned in response
 metadata; fallback must never be silent.
 
+The initial `run` command is explicitly subscription-backed. If a provider
+runtime reports API-key authentication, SubAuth returns
+`subscription_not_ready` instead of silently consuming API credits.
+
 ## Security boundary
 
 The initial daemon binds only to a per-user Unix domain socket. It does not
 listen on TCP. Credentials never appear in main-service responses, logs, or
 provider-neutral events. Local shell and filesystem tools are outside the V1
 daemon boundary.
-

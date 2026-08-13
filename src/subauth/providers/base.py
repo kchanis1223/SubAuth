@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from enum import StrEnum
 from typing import Any, AsyncIterator, Mapping
 
@@ -50,6 +50,7 @@ class ProviderStatus:
     support_level: SupportLevel
     capabilities: ProviderCapabilities
     detail: str | None = None
+    metadata: Mapping[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         value = asdict(self)
@@ -78,3 +79,5 @@ class ProviderAdapter(ABC):
         if False:
             yield {}
 
+    async def close(self) -> None:
+        """Release provider runtime resources owned by this adapter."""

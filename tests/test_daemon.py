@@ -10,6 +10,16 @@ sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 from subauth.client import SubAuthClient  # noqa: E402
 from subauth.config import Settings  # noqa: E402
 from subauth.daemon.server import SubAuthDaemon  # noqa: E402
+from subauth.providers.registry import ProviderRegistry  # noqa: E402
+from subauth.providers.stub import StubProviderAdapter  # noqa: E402
+
+
+class StreamingStubProviderAdapter(StubProviderAdapter):
+    async def stream(self, request):
+        del request
+        yield {"type": "response.started", "data": {"provider": self.name}}
+        yield {"type": "output.text.delta", "data": {"delta": "OK"}}
+        yield {"type": "response.completed", "data": {"status": "completed"}}
 
 
 class DaemonTests(unittest.IsolatedAsyncioTestCase):
@@ -20,7 +30,14 @@ class DaemonTests(unittest.IsolatedAsyncioTestCase):
             runtime_dir=runtime_dir,
             socket_path=runtime_dir / "subauth.sock",
         )
-        self.daemon = SubAuthDaemon(settings=self.settings)
+        registry = ProviderRegistry(
+            [
+                StreamingStubProviderAdapter("openai", "test stub"),
+                StubProviderAdapter("claude", "test stub"),
+                StubProviderAdapter("gemini", "test stub"),
+            ]
+        )
+        self.daemon = SubAuthDaemon(settings=self.settings, registry=registry)
         await self.daemon.start()
 
     async def asyncTearDown(self) -> None:
@@ -39,7 +56,25 @@ class DaemonTests(unittest.IsolatedAsyncioTestCase):
             ["claude", "gemini", "openai"],
         )
 
+    async def test_single_provider_probe_over_unix_socket(self) -> None:
+        response = await SubAuthClient(self.settings).request(
+            "providers.probe", {"provider": "openai"}
+        )
+        self.assertEqual(response["result"]["provider"], "openai")
+
+    async def test_normalized_events_stream_over_unix_socket(self) -> None:
+        events = [
+            event
+            async for event in SubAuthClient(self.settings).stream(
+                "responses.create",
+                {"provider": "openai", "input": "Reply OK"},
+            )
+        ]
+        self.assertEqual(
+            [event["type"] for event in events],
+            ["response.started", "output.text.delta", "response.completed"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
-
