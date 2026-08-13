@@ -135,3 +135,7 @@ not a proof that tools are absent.
 > [Antigravity terms](https://antigravity.google/terms).
 
 See [`docs/probes/gemini.md`](docs/probes/gemini.md) for the verified contract.
+The live smoke test completed with `GEMINI_OK` on `gemini-3.6-flash-high`.
+Antigravity exposed its agent tool surface and consumed 18,410 input tokens for
+that minimal request, so this transport is substantially heavier than a direct
+text API and remains unsuitable for high-volume use.

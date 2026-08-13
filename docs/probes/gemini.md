@@ -1,9 +1,9 @@
 # Gemini Antigravity official-runtime probe
 
-Designed against Antigravity CLI 1.1.12 on macOS on 2026-08-13. The official
-binary and its SHA-512 manifest were inspected in a temporary directory; it was
-not installed into the user's home directory, so live keyring login and model
-inference remain pending.
+Verified with Antigravity CLI 1.1.12 on macOS on 2026-08-13. The official
+binary and its SHA-512 manifest were inspected before installation, then the
+installed runtime was verified through a live OS-keyring login, model probe,
+and subscription-backed text inference.
 
 ## Why Antigravity, not Gemini CLI
 
@@ -87,11 +87,23 @@ as an external-demo or production transport without Google authorization.
 | Capability | Result |
 | --- | --- |
 | Official CLI version and flags | Verified with temporary 1.1.12 binary |
-| Google keyring login | Implemented as interactive handoff; live pending |
-| Gemini model filtering | Fixture-tested |
+| Google keyring login | Live verified |
+| Gemini model filtering | Fixture-tested and live verified |
 | API/Vertex/Cloud environment stripping | Fixture-tested |
 | AI-credit fallback refusal | Fixture-tested |
-| NDJSON normalization | Fixture-tested against documented schema |
-| Text delta streaming | Fixture-tested; live pending |
+| NDJSON normalization | Fixture-tested and live verified |
+| Text delta streaming | Live verified |
 | Tool-step termination | Fixture-tested |
 | Exact subscription plan detection | Not exposed by runtime |
+
+## Live smoke result
+
+The live request pinned `gemini-3.6-flash-high`, produced `GEMINI_OK` followed
+by a newline as normalized text deltas, and finished with
+`response.completed`. Antigravity reported 18,410 input tokens, 70 output
+tokens, and 62 thinking tokens for this minimal request.
+
+The `init` event reported runtime tools as exposed even though none were used.
+This confirms two V1 limitations: Antigravity is a comparatively heavy agent
+harness for plain text inference, and the sandbox/stream guard is containment
+rather than a true no-tools execution mode.

@@ -32,8 +32,8 @@ captured with all credentials redacted.
 - Claude normalized Unix-socket text streaming: implemented
 - Claude filesystem/tool/MCP suppression: implemented for CLI flags; adversarial audit pending
 - Gemini legacy CLI consumer transition analysis: completed
-- Antigravity CLI authentication and model probe: implemented; live sign-in pending
-- Antigravity normalized Unix-socket streaming: fixture-tested; live smoke pending
+- Antigravity CLI authentication and model probe: live verified
+- Antigravity normalized Unix-socket streaming: live verified
 - Gemini API/Vertex environment fallback prevention: implemented
 - Antigravity AI-credit fallback refusal: implemented
 - Antigravity tool-step termination: implemented; pre-execution suppression unavailable
