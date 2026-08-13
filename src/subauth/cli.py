@@ -12,6 +12,7 @@ from collections.abc import Sequence
 from subauth.client import SubAuthClient
 from subauth.config import Settings
 from subauth.daemon.server import SubAuthDaemon
+from subauth.providers.claude import CLAUDE_POLICY_WARNING
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -64,6 +65,7 @@ async def _request(method: str, params: dict[str, str] | None = None) -> int:
 
 
 async def _login(provider: str) -> int:
+    _warn_provider_policy(provider)
     settings = Settings.load()
     try:
         response = await SubAuthClient(settings).request(
@@ -87,6 +89,7 @@ async def _login(provider: str) -> int:
 
 
 async def _run(provider: str, prompt: str, model: str, system: str | None) -> int:
+    _warn_provider_policy(provider)
     params = {"provider": provider, "input": prompt, "model": model}
     if system:
         params["system"] = system
@@ -100,6 +103,11 @@ async def _run(provider: str, prompt: str, model: str, system: str | None) -> in
         print(f"SubAuth daemon is unavailable: {error}", file=sys.stderr)
         return 1
     return 1 if failed else 0
+
+
+def _warn_provider_policy(provider: str) -> None:
+    if provider == "claude":
+        print(f"WARNING: {CLAUDE_POLICY_WARNING}", file=sys.stderr)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

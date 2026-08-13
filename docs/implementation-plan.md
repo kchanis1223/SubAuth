@@ -27,7 +27,11 @@ captured with all credentials redacted.
 - OpenAI subscription model inference: implemented
 - OpenAI normalized Unix-socket streaming: implemented
 - OpenAI tool-surface suppression audit: pending
-- Claude and Gemini probes: pending
+- Claude Code authentication and subscription probe: implemented
+- Claude Code normal login and `setup-token` detection: implemented
+- Claude normalized Unix-socket text streaming: implemented
+- Claude filesystem/tool/MCP suppression: implemented for CLI flags; adversarial audit pending
+- Gemini probe: pending
 
 ## Phase 1: macOS daemon foundation
 
@@ -48,9 +52,9 @@ captured with all credentials redacted.
    Gemini API or Google Cloud.
 
 Claude product routing through subscription credentials is not endorsed by
-Anthropic. SubAuth will expose the technical mode but mark it experimental,
-display a strong login warning, and recommend API authentication before a
-formal release.
+Anthropic. SubAuth exposes the technical mode but marks it experimental,
+includes a strong warning in probe and inference events, and recommends API
+authentication before a formal release.
 
 ## Phase 3: common response API
 
