@@ -92,11 +92,7 @@ public final class AntigravityRuntimeAdapter implements RuntimeAdapter {
         if (!status.subscriptionReady()) {
             return Flux.error(new SubAuthException("subscription_not_ready", status.detail()));
         }
-        String model = request.model() == null ? status.models().getFirst() : request.model();
-        if (!status.models().contains(model) || !model.startsWith("gemini-")) {
-            return Flux.error(new SubAuthException(
-                    "invalid_model", "The requested model is not available through Antigravity: " + model));
-        }
+        String model = selectModel(status.models(), request.model(), request.effort());
 
         Path workspace = ProcessSupport.temporaryDirectory("subauth-gemini-");
         List<String> arguments = new ArrayList<>(List.of(
@@ -141,7 +137,11 @@ public final class AntigravityRuntimeAdapter implements RuntimeAdapter {
                         String id = textOrNull(result.get("conversation_id"));
                         if (id != null) conversationId.set(id);
                         if (!"SUCCESS".equals(result.path("status").asText())) {
-                            sink.error(new SubAuthException("antigravity_result_error", "Antigravity returned an error"));
+                            String detail = result.path("error").asText();
+                            String errorMessage = detail.isBlank()
+                                    ? "Antigravity returned an error"
+                                    : "Antigravity returned an error: " + detail;
+                            sink.error(new SubAuthException("antigravity_result_error", errorMessage));
                             return;
                         }
                         String response = result.path("response").asText();
@@ -165,6 +165,35 @@ public final class AntigravityRuntimeAdapter implements RuntimeAdapter {
             throw new SubAuthUnsupportedCapabilityException(
                     "Antigravity supports only low, medium, and high effort");
         }
+    }
+
+    static String selectModel(List<String> available, String requested, SubAuthEffort effort) {
+        if (requested != null) {
+            if (!available.contains(requested) || !requested.startsWith("gemini-")) {
+                throw new SubAuthException(
+                        "invalid_model", "The requested model is not available through Antigravity: " + requested);
+            }
+            if (effort != null && !requested.endsWith("-" + effort.cliValue())) {
+                throw new SubAuthException(
+                        "model_effort_conflict",
+                        "The Antigravity model " + requested + " conflicts with effort=" + effort.cliValue());
+            }
+            return requested;
+        }
+        if (effort == null) {
+            return available.stream()
+                    .filter(model -> model.startsWith("gemini-"))
+                    .findFirst()
+                    .orElseThrow(() -> new SubAuthException(
+                            "no_gemini_model", "Antigravity did not report an available Gemini model"));
+        }
+        String suffix = "-" + effort.cliValue();
+        return available.stream()
+                .filter(model -> model.startsWith("gemini-") && model.endsWith(suffix))
+                .findFirst()
+                .orElseThrow(() -> new SubAuthException(
+                        "no_model_for_effort",
+                        "Antigravity did not report an available Gemini model for effort=" + effort.cliValue()));
     }
 
     private String guardedPrompt(RuntimeRequest request) {
