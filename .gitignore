@@ -3,6 +3,8 @@ __pycache__/
 *.py[cod]
 .env
 target/
+.gradle/
+build/
 .idea/
 *.iml
 .classpath
