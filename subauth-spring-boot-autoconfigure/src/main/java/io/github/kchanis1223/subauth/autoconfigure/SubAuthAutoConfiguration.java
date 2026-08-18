@@ -17,6 +17,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
 import org.springframework.beans.factory.ObjectProvider;
 
 @AutoConfiguration(beforeName = "org.springframework.ai.model.chat.client.autoconfigure.ChatClientAutoConfiguration")
@@ -58,8 +59,9 @@ public class SubAuthAutoConfiguration {
         return new RuntimeRegistry(adapters);
     }
 
-    @Bean
-    @ConditionalOnMissingBean(ChatModel.class)
+    @Bean(name = "subAuthChatModel")
+    @Primary
+    @ConditionalOnMissingBean(SubAuthChatModel.class)
     public SubAuthChatModel subAuthChatModel(
             RuntimeRegistry registry, SubAuthProperties properties) {
         SubAuthChatOptions options = SubAuthChatOptions.builder()

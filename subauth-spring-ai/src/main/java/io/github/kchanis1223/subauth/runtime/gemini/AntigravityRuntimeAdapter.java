@@ -18,9 +18,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.kchanis1223.subauth.SubAuthEffort;
 import io.github.kchanis1223.subauth.SubAuthException;
 import io.github.kchanis1223.subauth.SubAuthProvider;
-import io.github.kchanis1223.subauth.SubAuthUnsupportedCapabilityException;
 import io.github.kchanis1223.subauth.runtime.ConversationRenderer;
 import io.github.kchanis1223.subauth.runtime.RuntimeAdapter;
+import io.github.kchanis1223.subauth.runtime.RuntimeCapabilities;
 import io.github.kchanis1223.subauth.runtime.RuntimeEvent;
 import io.github.kchanis1223.subauth.runtime.RuntimeProbe;
 import io.github.kchanis1223.subauth.runtime.RuntimeRequest;
@@ -62,6 +62,14 @@ public final class AntigravityRuntimeAdapter implements RuntimeAdapter {
     @Override public SubAuthProvider provider() { return SubAuthProvider.GEMINI; }
 
     @Override
+    public RuntimeCapabilities capabilities() {
+        return RuntimeCapabilities.textOnly(Set.of(
+                SubAuthEffort.LOW,
+                SubAuthEffort.MEDIUM,
+                SubAuthEffort.HIGH));
+    }
+
+    @Override
     public RuntimeProbe probe() {
         try {
             if (creditFallbackEnabled()) {
@@ -87,7 +95,7 @@ public final class AntigravityRuntimeAdapter implements RuntimeAdapter {
 
     @Override
     public Flux<RuntimeEvent> stream(RuntimeRequest request) {
-        validateEffort(request.effort());
+        capabilities().validate(request);
         RuntimeProbe status = probe();
         if (!status.subscriptionReady()) {
             return Flux.error(new SubAuthException("subscription_not_ready", status.detail()));
@@ -149,7 +157,9 @@ public final class AntigravityRuntimeAdapter implements RuntimeAdapter {
                             sink.next(RuntimeEvent.delta(response, metadata(model, conversationId.get())));
                         }
                         sink.next(RuntimeEvent.completed(
-                                metadata(model, conversationId.get()), usage(result.path("usage"))));
+                                metadata(model, conversationId.get()),
+                                usage(result.path("usage")),
+                                finishReason(result)));
                         completed.set(true);
                     }
                 })
@@ -158,13 +168,6 @@ public final class AntigravityRuntimeAdapter implements RuntimeAdapter {
                         : Flux.error(new SubAuthException(
                                 "incomplete_runtime_stream", "Antigravity ended without a result event"))))
                 .doFinally(ignored -> ProcessSupport.deleteTemporaryDirectory(workspace));
-    }
-
-    private void validateEffort(SubAuthEffort effort) {
-        if (effort == SubAuthEffort.MINIMAL || effort == SubAuthEffort.XHIGH || effort == SubAuthEffort.MAX) {
-            throw new SubAuthUnsupportedCapabilityException(
-                    "Antigravity supports only low, medium, and high effort");
-        }
     }
 
     static String selectModel(List<String> available, String requested, SubAuthEffort effort) {
@@ -257,6 +260,11 @@ public final class AntigravityRuntimeAdapter implements RuntimeAdapter {
 
     private static String textOrNull(JsonNode node) {
         return node != null && node.isTextual() && !node.asText().isBlank() ? node.asText() : null;
+    }
+
+    private static String finishReason(JsonNode result) {
+        String value = textOrNull(result.get("finish_reason"));
+        return value == null ? textOrNull(result.get("finishReason")) : value;
     }
 
     private static Integer integerOrNull(JsonNode node) { return node != null && node.isNumber() ? node.intValue() : null; }

@@ -37,6 +37,22 @@ The build produces:
 - `subauth-spring-boot-autoconfigure`: Spring Boot auto-configuration
 - `subauth-spring-boot-starter`: the dependency applications normally add
 
+## Internal package distribution
+
+Organization builds are published to the private GitHub Packages registry with
+versions such as `0.2.0-internal.1`. On an authorized developer Mac, run the
+one-time setup and optionally verify a published version:
+
+```bash
+gh auth refresh -h github.com -s read:packages
+scripts/setup-internal.sh --version 0.2.0-internal.1
+```
+
+The setup adds the authenticated package repository to Maven settings, so
+consumer projects only need the starter dependency and do not need their own
+`<repositories>` block. See [internal distribution](docs/internal-distribution.md)
+for publishing, credential, CI, and versioning details.
+
 ## Spring Boot usage
 
 After installing the current snapshot locally, add the starter to the main
@@ -88,6 +104,49 @@ class AiService {
 Spring AI chat memory remains responsible for conversation state. Each SubAuth
 request starts a fresh provider runtime context and receives the complete
 message history in its `Prompt`.
+
+### Development-to-production profile switch
+
+Keep application code on portable Spring AI types and select the transport by
+configuration. A development profile can use the developer subscription:
+
+```yaml
+# application-dev.yml
+spring:
+  ai:
+    model:
+      chat: subauth
+    subauth:
+      provider: openai
+      model: auto
+      effort: medium
+```
+
+The production profile selects an official Spring AI provider instead:
+
+```yaml
+# application-prod.yml
+spring:
+  ai:
+    model:
+      chat: openai
+    openai:
+      api-key: ${OPENAI_API_KEY}
+      chat:
+        options:
+          model: your-production-model
+```
+
+The production application must add the official provider starter it selects;
+the SubAuth starter intentionally does not pull OpenAI, Anthropic, or Google
+API transports into the application. `ChatClient` service code does not change
+between the profiles.
+
+When `spring.ai.model.chat=subauth`, the auto-configured bean is named
+`subAuthChatModel` and is primary. Other official or custom `ChatModel` beans
+may coexist and remain available through `@Qualifier`. A user-defined
+`SubAuthChatModel` bean replaces only the SubAuth default rather than being
+blocked by an unrelated provider model.
 
 ### Request-specific provider options
 
@@ -166,6 +225,8 @@ Implemented:
 - system, user, and assistant text messages
 - stateless full-history prompts
 - provider/model/effort selection
+- structured internal roles, content values, and message metadata
+- provider capability validation before CLI execution
 - usage and runtime metadata when observable
 - Reactor cancellation propagated to provider runtimes
 - Spring Boot auto-configuration and optional health indicator

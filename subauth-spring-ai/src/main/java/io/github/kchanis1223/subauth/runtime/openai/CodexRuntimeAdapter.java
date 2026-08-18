@@ -6,14 +6,17 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.kchanis1223.subauth.SubAuthEffort;
 import io.github.kchanis1223.subauth.SubAuthException;
 import io.github.kchanis1223.subauth.SubAuthProvider;
 import io.github.kchanis1223.subauth.runtime.ConversationRenderer;
 import io.github.kchanis1223.subauth.runtime.RuntimeAdapter;
+import io.github.kchanis1223.subauth.runtime.RuntimeCapabilities;
 import io.github.kchanis1223.subauth.runtime.RuntimeEvent;
 import io.github.kchanis1223.subauth.runtime.RuntimeProbe;
 import io.github.kchanis1223.subauth.runtime.RuntimeRequest;
@@ -34,6 +37,11 @@ public final class CodexRuntimeAdapter implements RuntimeAdapter {
     }
 
     @Override public SubAuthProvider provider() { return SubAuthProvider.OPENAI; }
+
+    @Override
+    public RuntimeCapabilities capabilities() {
+        return RuntimeCapabilities.textOnly(Set.of(SubAuthEffort.values()));
+    }
 
     @Override
     public RuntimeProbe probe() {
@@ -63,6 +71,7 @@ public final class CodexRuntimeAdapter implements RuntimeAdapter {
 
     @Override
     public Flux<RuntimeEvent> stream(RuntimeRequest request) {
+        capabilities().validate(request);
         return Flux.create(sink -> {
             AtomicReference<String> threadIdRef = new AtomicReference<>();
             AtomicReference<String> turnIdRef = new AtomicReference<>();
@@ -124,7 +133,9 @@ public final class CodexRuntimeAdapter implements RuntimeAdapter {
                                     throw new SubAuthException("codex_runtime_error", "Codex turn did not complete successfully");
                                 }
                                 sink.next(RuntimeEvent.completed(
-                                        metadata(model, threadId, turnId), usage(turn.path("usage"))));
+                                        metadata(model, threadId, turnId),
+                                        usage(turn.path("usage")),
+                                        finishReason(turn)));
                                 sink.complete();
                                 return;
                             }
@@ -191,6 +202,11 @@ public final class CodexRuntimeAdapter implements RuntimeAdapter {
 
     private static String textOrNull(JsonNode node) {
         return node != null && node.isTextual() && !node.asText().isBlank() ? node.asText() : null;
+    }
+
+    private static String finishReason(JsonNode turn) {
+        String value = textOrNull(turn.get("finishReason"));
+        return value == null ? textOrNull(turn.get("finish_reason")) : value;
     }
 
     @Override

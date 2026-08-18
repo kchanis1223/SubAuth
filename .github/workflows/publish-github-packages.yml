@@ -1,0 +1,51 @@
+name: Publish internal package
+
+on:
+  push:
+    tags:
+      - "v*-internal.*"
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: macos-latest
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v6
+
+      - name: Set up Java and GitHub Packages authentication
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+          server-id: github
+          server-username: GITHUB_ACTOR
+          server-password: GITHUB_TOKEN
+
+      - name: Validate tag and set Maven version
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+-internal\.[0-9]+$ ]]; then
+            echo "Expected a tag such as v0.2.0-internal.1, got: $GITHUB_REF_NAME" >&2
+            exit 1
+          fi
+          mvn --batch-mode --no-transfer-progress \
+            org.codehaus.mojo:versions-maven-plugin:2.21.0:set \
+            -DnewVersion="$version" \
+            -DprocessAllModules=true \
+            -DgenerateBackupPoms=false
+
+      - name: Verify and publish reactor
+        run: mvn --batch-mode --no-transfer-progress clean deploy
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

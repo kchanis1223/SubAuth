@@ -15,9 +15,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.kchanis1223.subauth.SubAuthException;
 import io.github.kchanis1223.subauth.SubAuthEffort;
 import io.github.kchanis1223.subauth.SubAuthProvider;
-import io.github.kchanis1223.subauth.SubAuthUnsupportedCapabilityException;
 import io.github.kchanis1223.subauth.runtime.ConversationRenderer;
 import io.github.kchanis1223.subauth.runtime.RuntimeAdapter;
+import io.github.kchanis1223.subauth.runtime.RuntimeCapabilities;
 import io.github.kchanis1223.subauth.runtime.RuntimeEvent;
 import io.github.kchanis1223.subauth.runtime.RuntimeProbe;
 import io.github.kchanis1223.subauth.runtime.RuntimeRequest;
@@ -59,6 +59,16 @@ public final class ClaudeCodeRuntimeAdapter implements RuntimeAdapter {
     @Override public SubAuthProvider provider() { return SubAuthProvider.CLAUDE; }
 
     @Override
+    public RuntimeCapabilities capabilities() {
+        return RuntimeCapabilities.textOnly(Set.of(
+                SubAuthEffort.LOW,
+                SubAuthEffort.MEDIUM,
+                SubAuthEffort.HIGH,
+                SubAuthEffort.XHIGH,
+                SubAuthEffort.MAX));
+    }
+
+    @Override
     public RuntimeProbe probe() {
         try {
             Map<String, String> environment = subscriptionEnvironment();
@@ -82,10 +92,7 @@ public final class ClaudeCodeRuntimeAdapter implements RuntimeAdapter {
 
     @Override
     public Flux<RuntimeEvent> stream(RuntimeRequest request) {
-        if (request.effort() == SubAuthEffort.MINIMAL) {
-            return Flux.error(new SubAuthUnsupportedCapabilityException(
-                    "Claude Code supports low, medium, high, xhigh, and max effort"));
-        }
+        capabilities().validate(request);
         RuntimeProbe status = probe();
         if (!status.subscriptionReady()) {
             return Flux.error(new SubAuthException("subscription_not_ready", status.detail()));
@@ -139,7 +146,9 @@ public final class ClaudeCodeRuntimeAdapter implements RuntimeAdapter {
                             sink.next(RuntimeEvent.delta(result, metadata(model.get(), sessionId.get())));
                         }
                         sink.next(RuntimeEvent.completed(
-                                metadata(model.get(), sessionId.get()), usage(message.path("usage"))));
+                                metadata(model.get(), sessionId.get()),
+                                usage(message.path("usage")),
+                                finishReason(message)));
                         completed.set(true);
                     }
                 })
@@ -184,6 +193,11 @@ public final class ClaudeCodeRuntimeAdapter implements RuntimeAdapter {
 
     private static String textOrNull(JsonNode node) {
         return node != null && node.isTextual() && !node.asText().isBlank() ? node.asText() : null;
+    }
+
+    private static String finishReason(JsonNode result) {
+        String value = textOrNull(result.get("stop_reason"));
+        return value == null ? textOrNull(result.get("stopReason")) : value;
     }
 
     private static Integer integerOrNull(JsonNode node) { return node != null && node.isNumber() ? node.intValue() : null; }
