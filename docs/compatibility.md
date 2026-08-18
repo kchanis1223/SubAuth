@@ -12,6 +12,13 @@ compatible with both tested API generations and does not require a framework
 upgrade. The optional Boot 4 health integration is not added to Boot 3 consumer
 classpaths.
 
+SubAuth uses explicit versions for its direct build dependencies. Its published
+parent and module POMs do not import the Spring Boot or Spring AI BOMs. This
+prevents a Boot 3 consumer from resolving the complete Boot 4 dependency
+management graph just to read SubAuth metadata. The host application's platform
+can still align SubAuth's transitive Spring dependencies to its selected Spring
+AI generation.
+
 ## Supported surface
 
 | Spring AI surface | Status |

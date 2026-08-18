@@ -52,6 +52,12 @@ jobs:
       - name: Verify reactor
         run: mvn --batch-mode --no-transfer-progress clean install
 
+      - name: Verify consumer POM packaging
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          scripts/verify-consumer-poms.sh "$version"
+
       - name: Verify Spring AI 1.1 compatibility
         shell: bash
         run: |

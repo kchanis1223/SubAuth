@@ -121,6 +121,10 @@ Spring AI 2.0. A new application without Spring AI dependency management must
 import the BOM matching its Spring Boot generation; installing SubAuth must not
 silently upgrade the application's framework.
 
+The release workflow rejects consumer POMs that import the SubAuth build
+baseline BOMs. This keeps package installation from resolving the full Spring
+Boot 4 dependency-management graph in Spring Boot 3 applications.
+
 Never commit `subauthGithubToken` to a project-level `gradle.properties`; setup
 stores it only in the user's home directory.
 

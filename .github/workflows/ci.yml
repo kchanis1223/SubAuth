@@ -31,5 +31,8 @@ jobs:
       - name: Verify current baseline
         run: mvn --batch-mode --no-transfer-progress clean install
 
+      - name: Verify consumer POM packaging
+        run: scripts/verify-consumer-poms.sh
+
       - name: Verify Spring AI 1.1 compatibility
         run: gradle --no-daemon -p compatibility-tests/spring-ai-1.1 test
