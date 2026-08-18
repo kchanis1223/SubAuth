@@ -1,94 +1,67 @@
 # Architecture
 
-## Boundary
+## Product boundary
 
-SubAuth is a developer-sponsored subscription runtime. It is not an end-user
-authentication system.
+SubAuth is a Spring AI model provider for development and developer-controlled
+demos. The Spring Boot main service remains responsible for HTTP endpoints,
+external-user authentication, authorization, rate limits, persistence, and
+chat memory.
 
 ```text
-external user -> main service -> SubAuth -> AI provider
-external user <- main service <- SubAuth <- AI provider
+external user
+    -> Spring Boot main service
+        -> Spring AI ChatClient
+            -> SubAuthChatModel
+                -> subscription runtime
 ```
 
-The main service decides who may access the product. Once a request reaches the
-local SubAuth socket, SubAuth executes it when the selected provider is usable.
+SubAuth never accepts requests directly from external users.
 
-## Components
+## In-process design
 
-1. The daemon owns the Unix socket and provider worker lifecycle.
-2. The credential broker stores provider credentials in macOS Keychain.
-3. The capability router selects an official runtime, direct subscription
-   transport, or API transport.
-4. Provider adapters convert common requests and events.
-5. The client SDK hides daemon startup and wire-protocol details.
+`SubAuthChatModel` implements Spring AI's `ChatModel` and
+`StreamingChatModel` contract. There is no sidecar daemon, local HTTP gateway,
+Unix socket, custom client SDK, or Python runtime.
 
-## Stateless request lifecycle
+1. Spring AI builds a `Prompt`, including history supplied by chat memory.
+2. `PromptRuntimeMapper` validates supported options and creates a stateless
+   `RuntimeRequest`.
+3. `RuntimeRegistry` selects the configured provider adapter.
+4. The adapter invokes Codex App Server, Claude Code, or Antigravity.
+5. Runtime events are converted directly to Spring AI `ChatResponse` values.
+6. Reactor cancellation interrupts the turn or child process.
 
-Every streaming response has a client-generated request ID. The daemon tracks
-the provider worker under that ID, allowing `responses.cancel` to stop it from a
-second connection. Cancellation is normalized as `response.cancelled`.
+## Modules
 
-SubAuth owns no application session or conversation history. The main service
-owns user/session identity and builds every request from its canonical state.
-Each request creates a fresh provider runtime context. Provider-native thread,
-session, and conversation IDs may appear as diagnostic event metadata, but are
-never accepted as continuation handles.
+- `subauth-spring-ai`: public model API and provider runtimes
+- `subauth-spring-boot-autoconfigure`: properties, beans, and health
+- `subauth-spring-boot-starter`: application-facing dependency
 
-The only transient daemon state is an active provider task keyed by request ID.
-It exists solely for cancellation and is removed when the request terminates.
+Provider runtime formats are private implementation details. No native runtime
+payload is exposed as a second public protocol. Observable provider-specific
+values are attached to Spring AI response metadata only when they are safe and
+well-defined.
 
-## Provider-native event preservation
+## State ownership
 
-The stable response envelope is provider-neutral. The default `normalized`
-mode contains only common lifecycle and text events. The opt-in
-`normalized_with_native` mode adds the corresponding native Codex App Server,
-Claude Code, or Antigravity event without replacing the common event type.
-Native notifications with no common equivalent use the additive
-`provider.event` type and never appear in default normalized streams.
+SubAuth is stateless at the application level. It does not accept native thread,
+session, or conversation identifiers as continuation handles. Spring AI
+`ChatMemory` or the main service database owns canonical conversation history.
 
-Native data crosses a mandatory daemon redaction boundary. Credential-like
-fields, account identity, local paths, plugin metadata, and MCP configuration
-are replaced before the event reaches a client. Provider-native schemas remain
-runtime-version-specific and are not part of SubAuth's portability guarantee.
-
-## Credential broker
-
-Provider-owned stored login remains the first choice for official runtimes. For
-credentials that must otherwise live in a shell environment, the credential
-broker stores a generic-password item in the current user's macOS Keychain.
-Items use service `io.github.kchanis1223.subauth.credentials` and a non-secret
-provider/credential account name.
-
-Interactive storage is delegated to the macOS `security` prompt so credential
-data does not appear in SubAuth command arguments. The daemon retrieves a value
-only when preparing the matching provider child environment. Plists, protocol
-messages, status output, and structured logs expose presence and storage type
-only. The first implemented broker entry is Claude `setup-token`.
-
-## Transport preference
-
-Every provider can implement these transports:
-
-1. `official-runtime`
-2. `direct-subscription`
-3. `api`
-
-`auto` selects the first transport that satisfies all requested capabilities.
-The actual transport and its support level must be returned in response
-metadata; fallback must never be silent.
-
-The initial `run` command is explicitly subscription-backed. If a provider
-runtime reports API-key authentication, SubAuth returns
-`subscription_not_ready` instead of silently consuming API credits.
+Codex App Server is a long-lived process owned by the application context, but
+each inference uses an ephemeral thread. Claude Code and Antigravity use an
+isolated temporary workspace per request.
 
 ## Security boundary
 
-The initial daemon binds only to a per-user Unix domain socket. It does not
-listen on TCP. Credentials never appear in main-service responses, logs, or
-provider-neutral events. Local shell and filesystem tools are outside the V1
-daemon boundary.
+- Provider API credential variables are removed before subscription CLIs run.
+- Codex threads are ephemeral, read-only, and use approval policy `never`.
+- Claude tools, MCP configuration, slash commands, and session persistence are
+  disabled.
+- Antigravity runs sandboxed in a temporary workspace and is terminated on tool
+  use.
+- Prompt and response bodies are not logged by SubAuth.
+- Runtime stderr is not relayed to callers because it can contain secrets.
 
-Daemon logs are newline-delimited JSON. They record request identifiers,
-methods, provider selection, lifecycle, completion, and sanitized errors, but
-not prompt or response content. Sensitive keys and recognizable credential
-assignments are redacted before serialization.
+The application process and provider CLIs run as the same macOS user. The main
+service therefore remains inside the developer's local trust boundary.

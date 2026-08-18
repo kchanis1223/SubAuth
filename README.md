@@ -1,264 +1,183 @@
 # SubAuth
 
-SubAuth is a local sidecar daemon that lets an AI service under development use
-the developer's own AI subscriptions. The first providers are OpenAI, Claude,
-and Gemini.
-
-The main service sends provider-neutral requests to SubAuth. SubAuth owns the
-developer's credentials, selects an official runtime or a direct subscription
-adapter, and returns normalized streaming events.
+SubAuth is a Spring AI `ChatModel` backed by the developer's local AI
+subscription runtimes. A Spring Boot application keeps using `ChatClient`,
+`Prompt`, `ChatResponse`, Reactor streaming, advisors, and chat memory; SubAuth
+replaces only the model transport used during development and controlled demos.
 
 ```text
-main service -> SubAuth -> provider runtime or protocol
-main service <- SubAuth <- provider runtime or protocol
+Spring AI ChatClient
+        -> SubAuthChatModel
+            -> Codex App Server (ChatGPT subscription)
+            -> Claude Code (Claude subscription, experimental)
+            -> Antigravity (Google subscription, terms-restricted)
 ```
 
-## Project status
+SubAuth is intentionally Spring AI-specific. It is not an HTTP proxy, an API
+compatibility server, a Python SDK, or an end-user authentication system.
 
-The Python daemon foundation, OpenAI subscription transport, experimental
-Claude subscription transport, and terms-restricted Gemini/Antigravity
-transport are implemented. See
-[`docs/implementation-plan.md`](docs/implementation-plan.md) for the staged
-roadmap.
+## Requirements
 
-## Development
+- macOS
+- Java 21+
+- Spring Boot 4.1+
+- Spring AI 2.0+
+- At least one supported provider CLI logged in with a subscription account
 
-Python 3.12 or newer is required. The current foundation uses only the standard
-library, so it can be exercised without installing project dependencies. The
-OpenAI transport requires a current Codex CLI on `PATH`; the Claude transport
-requires a current Claude Code CLI on `PATH`.
+## Build
 
 ```bash
-python3 -m unittest discover -s tests -v
-PYTHONPATH=src python3 -m subauth serve
+mvn test
+mvn install
 ```
 
-### macOS background service
+The build produces:
 
-Instead of keeping `serve` open in a terminal, install the per-user LaunchAgent:
+- `subauth-spring-ai`: `SubAuthChatModel`, options, and runtime adapters
+- `subauth-spring-boot-autoconfigure`: Spring Boot auto-configuration
+- `subauth-spring-boot-starter`: the dependency applications normally add
 
-```bash
-PYTHONPATH=src python3 -m subauth daemon install
-PYTHONPATH=src python3 -m subauth daemon status
+## Spring Boot usage
+
+After installing the current snapshot locally, add the starter to the main
+service:
+
+```xml
+<dependency>
+    <groupId>io.github.kchanis1223</groupId>
+    <artifactId>subauth-spring-boot-starter</artifactId>
+    <version>0.2.0-SNAPSHOT</version>
+</dependency>
 ```
 
-The job is loaded into the current user's `launchd` GUI domain and runs in that
-same user context, so the official provider CLIs retain access to their normal
-macOS Keychain sessions. The plist stores executable paths and configuration
-only; it does not copy provider credentials. `RunAtLoad` and `KeepAlive` are
-disabled. Any normal SubAuth client request starts the installed job on demand
-if its Unix socket is unavailable.
+Select SubAuth as the Spring AI chat model:
 
-Management commands are:
-
-```bash
-PYTHONPATH=src python3 -m subauth daemon start
-PYTHONPATH=src python3 -m subauth daemon stop
-PYTHONPATH=src python3 -m subauth daemon restart
-PYTHONPATH=src python3 -m subauth daemon logs --lines 100
-PYTHONPATH=src python3 -m subauth daemon uninstall
+```yaml
+spring:
+  ai:
+    model:
+      chat: subauth
+    subauth:
+      provider: openai
+      model: auto
+      effort: medium
+      request-timeout: 5m
 ```
 
-The generated LaunchAgent points at the current checkout and Python
-interpreter. Re-run `daemon install` after moving the repository or changing
-Python installations. Environment overrides such as `SUBAUTH_RUNTIME_DIR` and
-`SUBAUTH_SOCKET` intentionally disable automatic LaunchAgent startup so tests
-cannot accidentally contact the developer's real daemon.
+Application code remains normal Spring AI code:
 
-In another terminal:
+```java
+@Service
+class AiService {
+    private final ChatClient chatClient;
 
-```bash
-PYTHONPATH=src python3 -m subauth status
-PYTHONPATH=src python3 -m subauth providers
-PYTHONPATH=src python3 -m subauth probe openai
-PYTHONPATH=src python3 -m subauth probe claude
+    AiService(ChatClient.Builder builder) {
+        this.chatClient = builder.build();
+    }
+
+    String chat(String message) {
+        return chatClient.prompt().user(message).call().content();
+    }
+
+    Flux<String> stream(String message) {
+        return chatClient.prompt().user(message).stream().content();
+    }
+}
 ```
 
-`probe openai` starts Codex App Server, reads the current account and model
-catalog through its official JSON-RPC interface, and reports whether a ChatGPT
-subscription is ready. It does not make a model inference request. If signed
-out, keep the daemon running and start the managed browser flow with:
+Spring AI chat memory remains responsible for conversation state. Each SubAuth
+request starts a fresh provider runtime context and receives the complete
+message history in its `Prompt`.
 
-```bash
-PYTHONPATH=src python3 -m subauth login openai
+### Request-specific provider options
+
+`SubAuthChatOptions` can override the configured provider, model, and effort:
+
+```java
+Prompt prompt = new Prompt(
+    "Reply exactly: SUBAUTH_OK",
+    SubAuthChatOptions.builder()
+        .provider(SubAuthProvider.CLAUDE)
+        .model("sonnet")
+        .effort(SubAuthEffort.HIGH)
+        .build()
+);
+
+ChatResponse response = chatModel.call(prompt);
 ```
 
-Raw OpenAI access and refresh tokens are never read or returned by SubAuth.
+Generic generation settings that the subscription runtimes cannot guarantee
+are rejected with `SubAuthUnsupportedCapabilityException`; they are never
+silently ignored.
 
-To make an explicit subscription-backed inference request, keep the daemon
-running and use:
+## Provider setup
 
-```bash
-PYTHONPATH=src python3 -m subauth run openai "Reply exactly: SUBAUTH_OK"
+### OpenAI
+
+Install the current Codex CLI and sign in with ChatGPT. SubAuth talks to the
+official persistent `codex app-server --stdio` runtime, verifies that the
+account type is `chatgpt`, creates an ephemeral read-only thread, and disables
+approval-driven actions.
+
+```yaml
+spring.ai.subauth.provider: openai
+spring.ai.subauth.commands.codex: codex
 ```
 
-The command emits protocol-v1 JSON events as they arrive, including
-`response.started`, `output.text.delta`, and `response.completed`. This command
-does consume the developer's ChatGPT subscription allowance.
+### Claude
 
-The daemon listens on a per-user Unix domain socket by default. It does not
-perform end-user access control; the calling main service owns that concern.
+Install Claude Code and complete its normal Claude.ai login. SubAuth strips API
+key, Bedrock, Vertex, and Foundry environment variables, disables tools and MCP,
+uses safe mode, and disables session persistence. An existing setup token in
+`CLAUDE_CODE_OAUTH_TOKEN` or the legacy SubAuth macOS Keychain item is also
+recognized.
 
-## Claude (experimental)
-
-Claude runs through the official Claude Code CLI with tools, MCP servers,
-session persistence, and filesystem writes disabled. SubAuth removes API-key,
-cloud-provider, and federation credential variables from every Claude child
-process so this transport cannot silently fall back to usage-based API billing.
-
-Use the normal Claude.ai browser login:
-
-```bash
-PYTHONPATH=src python3 -m subauth login claude
-PYTHONPATH=src python3 -m subauth run claude "Reply exactly: CLAUDE_OK"
+```yaml
+spring.ai.subauth.provider: claude
+spring.ai.subauth.commands.claude: claude
 ```
 
-SubAuth also recognizes the official `claude setup-token` flow. Generate the
-token outside SubAuth, export it as `CLAUDE_CODE_OAUTH_TOKEN` before starting a
-foreground daemon, and then use the same `probe` and `run` commands. SubAuth
-checks only that the variable is present; it never returns or persists the
-token. The LaunchAgent deliberately does not copy shell-only secrets into its
-plist. Use normal Claude.ai stored login for background-service operation, or
-store a setup token in the SubAuth Keychain vault:
+Claude subscription routing is experimental and for development or limited
+previews only. Anthropic directs product developers to supported API
+authentication; migrate to the Anthropic API before formal release.
 
-```bash
-PYTHONPATH=src python3 -m subauth credential set claude setup-token
-PYTHONPATH=src python3 -m subauth credential status claude setup-token
+### Gemini
+
+Install Antigravity CLI and run `agy` once to complete Google sign-in. SubAuth
+strips Gemini API, ADC, Vertex, and Google Cloud credentials, refuses to run
+when purchased AI-credit fallback is enabled, uses a temporary sandbox, and
+stops the request if Antigravity attempts a tool call.
+
+```yaml
+spring.ai.subauth.provider: gemini
+spring.ai.subauth.commands.gemini: agy
 ```
 
-`credential set` delegates input to the macOS Keychain password prompt. The
-token is not placed in a command-line argument, plist, log, or SubAuth protocol
-message. The daemon reads it immediately before launching Claude Code and
-injects it only into that isolated child process. Remove it with:
+Google's Antigravity terms restrict access through third-party software. This
+adapter is limited to developer-controlled evaluation and must not carry
+production traffic without Google authorization.
 
-```bash
-PYTHONPATH=src python3 -m subauth credential delete claude setup-token
-```
+## Current compatibility
 
-The Keychain vault does not change Anthropic's policy boundary: setup-token
-routing remains experimental and limited to development or small previews.
+Implemented:
 
-> **Policy warning:** Anthropic says product and service developers should use
-> API-key or supported cloud-provider authentication and does not permit
-> third-party routing through consumer Claude plan credentials. This adapter is
-> therefore marked `experimental` and `development-and-limited-preview-only`.
-> The CLI prints this warning before login and inference, and every normalized
-> response carries it as policy metadata. Migrate to the Claude API before a
-> formal release. See the
-> [Anthropic legal and compliance documentation](https://code.claude.com/docs/en/legal-and-compliance).
+- Spring AI `ChatModel.call(Prompt)`
+- Spring AI `ChatModel.stream(Prompt)` returning `Flux<ChatResponse>`
+- system, user, and assistant text messages
+- stateless full-history prompts
+- provider/model/effort selection
+- usage and runtime metadata when observable
+- Reactor cancellation propagated to provider runtimes
+- Spring Boot auto-configuration and optional health indicator
 
-The verified runtime contract and limitations are recorded in
-[`docs/probes/claude.md`](docs/probes/claude.md).
+Not implemented yet:
 
-## Gemini via Antigravity (terms-restricted)
+- Spring AI tool callbacks
+- multimodal messages and files
+- structured-output guarantees
+- portable temperature/top-p/penalty/max-token controls
+- API-key production transport
 
-Google moved personal Google AI Pro, Ultra, and free-tier terminal access from
-Gemini CLI to Antigravity CLI in June 2026. SubAuth therefore targets the
-official `agy` runtime rather than the legacy `gemini` executable.
-
-Install Antigravity CLI using Google's current instructions, then launch `agy`
-once in an interactive terminal to complete Google sign-in. The runtime stores
-the session in the OS-native keyring.
-
-```bash
-PYTHONPATH=src python3 -m subauth login gemini
-PYTHONPATH=src python3 -m subauth probe gemini
-PYTHONPATH=src python3 -m subauth run gemini "Reply exactly: GEMINI_OK"
-```
-
-SubAuth strips Gemini API-key, ADC, Vertex, and Cloud-project environment
-variables. It also refuses to run when Antigravity's `useG1Credits` fallback is
-enabled, because that setting can consume purchased AI credits after plan quota
-is exhausted. The CLI does not expose the account's exact plan tier, so SubAuth
-can verify only that the keyring-authenticated runtime offers Gemini models.
-
-Antigravity does not currently expose a flag that removes all built-in and MCP
-tools. SubAuth runs each request in an empty temporary workspace with terminal
-sandboxing and slash commands disabled, asks the model not to use tools, and
-terminates the request if a tool step appears. This is a containment boundary,
-not a proof that tools are absent.
-
-> **Terms warning:** Google Antigravity's additional terms restrict accessing
-> the service with third-party software. This adapter is marked
-> `terms-restricted` and `developer-controlled-evaluation-only`. Do not use it
-> for external-user demonstrations or production traffic without Google
-> authorization. See the
-> [Antigravity terms](https://antigravity.google/terms).
-
-See [`docs/probes/gemini.md`](docs/probes/gemini.md) for the verified contract.
-The live smoke test completed with `GEMINI_OK` on `gemini-3.6-flash-high`.
-Antigravity exposed its agent tool surface and consumed 18,410 input tokens for
-that minimal request, so this transport is substantially heavier than a direct
-text API and remains unsuitable for high-volume use.
-
-## Logs and credential safety
-
-Daemon logs are newline-delimited JSON and contain lifecycle, request ID,
-method, provider, completion, and error metadata. Prompt text and model output
-are not logged. Sensitive field names, bearer values, token assignments, and
-known runtime credentials are redacted before formatting. View the current log
-tail with `subauth daemon logs`; provider credentials are never intentionally
-included in client responses or logs.
-
-## Python SDK
-
-SubAuth exposes a typed asynchronous Python SDK while keeping the low-level
-Unix-socket client available. Run source-tree examples with `PYTHONPATH=src`:
-
-```python
-import asyncio
-from subauth import AsyncSubAuth
-
-async def main():
-    client = AsyncSubAuth()
-    result = await client.responses.create(
-        provider="openai",
-        input="Reply exactly: SDK_OK",
-    )
-    print(result.text)
-
-asyncio.run(main())
-```
-
-Streaming returns a `ResponseStream` whose request ID is available before the
-request starts. Calling `cancel()` sends cancellation over a separate socket
-and stops the active provider worker:
-
-```python
-stream = client.responses.stream(provider="openai", input="Explain in detail")
-async with stream:
-    async for event in stream:
-        if event.type == "output.text.delta":
-            print(event.data["delta"], end="")
-        if should_stop:
-            await stream.cancel()
-```
-
-Normalized events are the default. Integrations that need provider-specific
-metadata can opt into sanitized native runtime events without giving up the
-common lifecycle:
-
-```python
-stream = client.responses.stream(
-    provider="openai",
-    input="Explain this response",
-    response_mode="normalized_with_native",
-)
-async for event in stream:
-    print(event.type, event.data, event.native)
-```
-
-Native payloads retain the Codex App Server, Claude Code, or Antigravity event
-shape. Credentials, account identity, local paths, plugin details, and MCP
-configuration are redacted at the daemon boundary. Pure unwrapped raw mode is
-not exposed because it would remove stable completion, error, and cancellation
-semantics.
-
-SubAuth requests are deliberately stateless. The main service owns user/session
-identity and canonical conversation history, and constructs each request from
-the context it wants the model to receive. Every request starts a fresh provider
-runtime context. Provider-native thread, session, or conversation IDs in events
-are diagnostic metadata only and cannot be used to resume through SubAuth.
-
-See [`examples/python_sdk.py`](examples/python_sdk.py) and
-[`docs/sdk.md`](docs/sdk.md).
+See [architecture](docs/architecture.md),
+[compatibility](docs/compatibility.md), and
+[runtime policies](docs/runtime-policies.md).
