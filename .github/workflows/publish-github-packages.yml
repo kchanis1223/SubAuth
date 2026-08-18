@@ -30,6 +30,11 @@ jobs:
           server-username: GITHUB_ACTOR
           server-password: GITHUB_TOKEN
 
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.6.1"
+
       - name: Validate tag and set Maven version
         shell: bash
         run: |
@@ -44,8 +49,20 @@ jobs:
             -DprocessAllModules=true \
             -DgenerateBackupPoms=false
 
-      - name: Verify and publish reactor
-        run: mvn --batch-mode --no-transfer-progress clean deploy
+      - name: Verify reactor
+        run: mvn --batch-mode --no-transfer-progress clean install
+
+      - name: Verify Spring AI 1.1 compatibility
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          gradle --no-daemon \
+            -p compatibility-tests/spring-ai-1.1 \
+            -PsubauthVersion="$version" \
+            test
+
+      - name: Publish reactor
+        run: mvn --batch-mode --no-transfer-progress deploy -DskipTests
         env:
           GITHUB_ACTOR: ${{ github.actor }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

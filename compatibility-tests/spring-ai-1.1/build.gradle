@@ -1,0 +1,37 @@
+plugins {
+    id 'java'
+}
+
+group = 'io.github.kchanis1223'
+version = '0.0.0'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+repositories {
+    mavenLocal()
+    mavenCentral()
+}
+
+def subauthVersion = providers.gradleProperty('subauthVersion')
+        .getOrElse('0.2.0-SNAPSHOT')
+
+dependencies {
+    testImplementation enforcedPlatform(
+            'org.springframework.boot:spring-boot-dependencies:3.5.16')
+    testImplementation enforcedPlatform(
+            'org.springframework.ai:spring-ai-bom:1.1.8')
+
+    testImplementation "io.github.kchanis1223:subauth-spring-boot-starter:${subauthVersion}"
+    testImplementation 'org.springframework.boot:spring-boot-test'
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testImplementation 'org.assertj:assertj-core'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}

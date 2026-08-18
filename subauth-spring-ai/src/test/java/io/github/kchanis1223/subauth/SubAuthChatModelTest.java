@@ -45,6 +45,8 @@ class SubAuthChatModelTest {
         assertThat(response.getResult().getOutput().getText()).isEqualTo("SUBAUTH_OK");
         assertThat(response.getMetadata().getModel()).isEqualTo("runtime-model");
         assertThat(response.getMetadata().getUsage().getPromptTokens()).isEqualTo(4);
+        assertThat(response.getMetadata().getUsage().getCacheReadInputTokens()).isEqualTo(1L);
+        assertThat(response.getMetadata().getUsage().getCacheWriteInputTokens()).isEqualTo(2L);
         assertThat(response.getResult().getMetadata().getFinishReason()).isEqualTo("end_turn");
         assertThat((Object) response.getResult().getOutput().getMetadata().get("reasoningContent"))
                 .isEqualTo("test-reasoning");
@@ -170,7 +172,7 @@ class SubAuthChatModelTest {
                                 0, "SUB", Map.of("reasoningContent", "test-reasoning"), metadata),
                         RuntimeEvent.delta("AUTH_OK", metadata),
                         RuntimeEvent.completed(metadata,
-                                new RuntimeUsage(4, 2, 6, null, null, Map.of()),
+                                new RuntimeUsage(4, 2, 6, 1L, 2L, Map.of()),
                                 finishReason));
             }
         };

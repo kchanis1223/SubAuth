@@ -23,5 +23,13 @@ jobs:
           java-version: "21"
           cache: maven
 
-      - name: Verify
-        run: mvn --batch-mode --no-transfer-progress clean verify
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.6.1"
+
+      - name: Verify current baseline
+        run: mvn --batch-mode --no-transfer-progress clean install
+
+      - name: Verify Spring AI 1.1 compatibility
+        run: gradle --no-daemon -p compatibility-tests/spring-ai-1.1 test

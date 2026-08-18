@@ -13,6 +13,7 @@ import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.metadata.ChatGenerationMetadata;
 import org.springframework.ai.chat.metadata.ChatResponseMetadata;
 import org.springframework.ai.chat.metadata.DefaultUsage;
+import org.springframework.ai.chat.metadata.Usage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
 
@@ -84,12 +85,39 @@ final class RuntimeResponseAccumulator {
         Object responseId = responseMetadata.get("responseId");
         if (responseId instanceof String id && !id.isBlank()) metadata.id(id);
         if (hasUsage()) {
-            metadata.usage(new DefaultUsage(
-                    usage.inputTokens(), usage.outputTokens(), usage.totalTokens(),
-                    usage.nativeUsage(), usage.cacheReadTokens(), usage.cacheWriteTokens()));
+            metadata.usage(springAiUsage());
+        }
+        if (usage.cacheReadTokens() != null) {
+            metadata.keyValue("cacheReadTokens", usage.cacheReadTokens());
+        }
+        if (usage.cacheWriteTokens() != null) {
+            metadata.keyValue("cacheWriteTokens", usage.cacheWriteTokens());
         }
         responseMetadata.forEach(metadata::keyValue);
         return metadata.build();
+    }
+
+    private Usage springAiUsage() {
+        try {
+            return DefaultUsage.class
+                    .getConstructor(
+                            Integer.class, Integer.class, Integer.class,
+                            Object.class, Long.class, Long.class)
+                    .newInstance(
+                            usage.inputTokens(), usage.outputTokens(), usage.totalTokens(),
+                            usage.nativeUsage(), usage.cacheReadTokens(), usage.cacheWriteTokens());
+        }
+        catch (NoSuchMethodException ignored) {
+            return new DefaultUsage(
+                    usage.inputTokens(), usage.outputTokens(), usage.totalTokens(),
+                    usage.nativeUsage());
+        }
+        catch (ReflectiveOperationException exception) {
+            throw new SubAuthException(
+                    "usage_mapping_failed",
+                    "SubAuth could not map provider usage to the active Spring AI version",
+                    exception);
+        }
     }
 
     private String effectiveModel(RuntimeRequest request) {

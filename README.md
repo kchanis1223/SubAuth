@@ -20,8 +20,7 @@ compatibility server, a Python SDK, or an end-user authentication system.
 
 - macOS
 - Java 21+
-- Spring Boot 4.1+
-- Spring AI 2.0+
+- Spring Boot 3.5 with Spring AI 1.1, or Spring Boot 4.1 with Spring AI 2.0
 - At least one supported provider CLI logged in with a subscription account
 
 ## Build

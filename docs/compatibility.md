@@ -1,5 +1,17 @@
 # Spring AI compatibility
 
+## Tested baselines
+
+| Spring Boot | Spring AI | Status |
+|---|---|---|
+| 3.5.16 | 1.1.8 | Supported and CI-tested |
+| 4.1.0 | 2.0.0 | Supported and CI-tested |
+
+The host application's Spring AI BOM remains authoritative. SubAuth is binary
+compatible with both tested API generations and does not require a framework
+upgrade. The optional Boot 4 health integration is not added to Boot 3 consumer
+classpaths.
+
 ## Supported surface
 
 | Spring AI surface | Status |

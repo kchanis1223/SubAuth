@@ -67,4 +67,9 @@ public final class SubAuthChatModel implements ChatModel {
         return defaultOptions;
     }
 
+    @Override
+    public ChatOptions getDefaultOptions() {
+        return defaultOptions;
+    }
+
 }

@@ -111,10 +111,15 @@ repositories {
 }
 
 dependencies {
-    implementation platform('org.springframework.ai:spring-ai-bom:2.0.0')
     implementation 'io.github.kchanis1223:subauth-spring-boot-starter:0.2.0-internal.1'
 }
 ```
+
+Keep the Spring AI BOM already selected by the host application. Tested
+combinations are Spring Boot 3.5 with Spring AI 1.1 and Spring Boot 4.1 with
+Spring AI 2.0. A new application without Spring AI dependency management must
+import the BOM matching its Spring Boot generation; installing SubAuth must not
+silently upgrade the application's framework.
 
 Never commit `subauthGithubToken` to a project-level `gradle.properties`; setup
 stores it only in the user's home directory.

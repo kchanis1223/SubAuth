@@ -55,6 +55,15 @@ public final class SubAuthChatOptions implements ChatOptions {
         return new Builder(this);
     }
 
+    /**
+     * Spring AI 1.1 uses {@code copy()} while Spring AI 2.0 uses
+     * {@code mutate()}. Keeping both methods makes the options object binary
+     * compatible with either contract.
+     */
+    public ChatOptions copy() {
+        return new Builder(this).build();
+    }
+
     public static final class Builder implements ChatOptions.Builder<Builder> {
         private SubAuthProvider provider;
         private SubAuthEffort effort;
