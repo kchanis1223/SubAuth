@@ -50,7 +50,7 @@ gh auth refresh -h github.com -s read:packages
 SubAuth 저장소를 받습니다.
 
 ```bash
-git clone git@github.com:kchanis1223/SubAuth.git
+git clone https://github.com/kchanis1223/SubAuth.git
 cd SubAuth
 ```
 
