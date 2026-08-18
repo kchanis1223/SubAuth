@@ -47,10 +47,26 @@ Run the setup from a SubAuth checkout:
 scripts/setup-internal.sh --version 0.2.0-internal.1
 ```
 
-The setup checks macOS, Java, Maven, GitHub authentication, and the three
-provider CLIs. It backs up an existing `~/.m2/settings.xml`, adds an active
-`subauth-github-packages` profile, stores the GitHub credential with file mode
-`0600`, and downloads the requested starter and transitive modules.
+The setup checks macOS, Java, GitHub authentication, and the three provider
+CLIs. By default it configures both build tools:
+
+- Maven: backs up `~/.m2/settings.xml`, adds the active
+  `subauth-github-packages` repository profile, and stores the credential.
+- Gradle: backs up `~/.gradle/gradle.properties` and upserts
+  `subauthGithubUser` and `subauthGithubToken` while preserving unrelated
+  properties and comments.
+
+All credential files and backups are restricted to file mode `0600`. Maven
+package verification downloads the requested starter and transitive modules.
+Gradle-only verification checks the published starter POM directly without
+requiring a global Gradle installation.
+
+Configure only one build tool when needed:
+
+```bash
+scripts/setup-internal.sh --maven-only
+scripts/setup-internal.sh --gradle-only
+```
 
 For non-interactive setup, provide a classic PAT with `read:packages` without
 putting it on the command line:
@@ -76,7 +92,36 @@ repository comes from the active settings profile:
 </dependency>
 ```
 
-CI in a consumer repository should configure the same repository and server
-credentials using `actions/setup-java`, then grant that repository read access
-to the package. Do not copy a developer's personal subscription credentials
-into CI; SubAuth live provider calls remain a local macOS release gate.
+Gradle credentials are configured globally, but the private package repository
+must remain explicit in each Gradle build. This avoids injecting a private
+repository into every unrelated Gradle project:
+
+```groovy
+repositories {
+    mavenCentral()
+    maven {
+        url = uri('https://maven.pkg.github.com/kchanis1223/SubAuth')
+        credentials {
+            username = findProperty('subauthGithubUser')
+                    ?: System.getenv('GITHUB_ACTOR')
+            password = findProperty('subauthGithubToken')
+                    ?: System.getenv('GITHUB_TOKEN')
+        }
+    }
+}
+
+dependencies {
+    implementation platform('org.springframework.ai:spring-ai-bom:2.0.0')
+    implementation 'io.github.kchanis1223:subauth-spring-boot-starter:0.2.0-internal.1'
+}
+```
+
+Never commit `subauthGithubToken` to a project-level `gradle.properties`; setup
+stores it only in the user's home directory.
+
+CI in a Maven consumer repository should configure the same repository and
+server credentials using `actions/setup-java`. Gradle consumers should pass
+`GITHUB_ACTOR` and `GITHUB_TOKEN` to the repository credentials block. In both
+cases, grant the consumer repository read access to the package. Do not copy a
+developer's personal subscription credentials into CI; SubAuth live provider
+calls remain a local macOS release gate.

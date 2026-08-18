@@ -48,10 +48,13 @@ gh auth refresh -h github.com -s read:packages
 scripts/setup-internal.sh --version 0.2.0-internal.1
 ```
 
-The setup adds the authenticated package repository to Maven settings, so
-consumer projects only need the starter dependency and do not need their own
-`<repositories>` block. See [internal distribution](docs/internal-distribution.md)
-for publishing, credential, CI, and versioning details.
+The setup configures Maven authentication and repository discovery in
+`~/.m2/settings.xml`, and Gradle credentials in
+`~/.gradle/gradle.properties`. Maven consumers only add the starter dependency;
+Gradle consumers also declare the private GitHub Packages repository in their
+build. Use `--maven-only` or `--gradle-only` to configure one tool. See
+[internal distribution](docs/internal-distribution.md) for publishing,
+credential, CI, and versioning details.
 
 ## Spring Boot usage
 

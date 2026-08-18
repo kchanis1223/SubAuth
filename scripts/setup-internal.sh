@@ -5,12 +5,14 @@ readonly REPOSITORY_OWNER="kchanis1223"
 readonly REPOSITORY_NAME="SubAuth"
 readonly REPOSITORY_URL="https://maven.pkg.github.com/${REPOSITORY_OWNER}/${REPOSITORY_NAME}"
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly SETTINGS_HELPER="${SCRIPT_DIR}/ConfigureMavenSettings.java"
+readonly MAVEN_SETTINGS_HELPER="${SCRIPT_DIR}/ConfigureMavenSettings.java"
+readonly GRADLE_PROPERTIES_HELPER="${SCRIPT_DIR}/ConfigureGradleProperties.java"
 
 assume_yes=false
 check_only=false
 skip_provider_checks=false
 package_version="${SUBAUTH_VERSION:-}"
+configuration_mode="both"
 
 usage() {
   cat <<'EOF'
@@ -19,8 +21,10 @@ Usage: scripts/setup-internal.sh [options]
 Configure this Mac to consume SubAuth from the private GitHub Packages registry.
 
 Options:
-  --yes                  Update Maven settings without an interactive prompt.
-  --check                Check prerequisites without changing Maven settings.
+  --yes                  Update settings without an interactive prompt.
+  --check                Check prerequisites without changing settings.
+  --maven-only           Configure Maven but leave Gradle unchanged.
+  --gradle-only          Configure Gradle but leave Maven unchanged.
   --skip-provider-checks Skip Codex, Claude Code, and Antigravity checks.
   --version VERSION      Download and verify a published SubAuth starter version.
   --help                 Show this help.
@@ -41,6 +45,22 @@ while (($# > 0)); do
       ;;
     --check)
       check_only=true
+      shift
+      ;;
+    --maven-only)
+      if [[ "$configuration_mode" == "gradle" ]]; then
+        echo "--maven-only and --gradle-only cannot be used together" >&2
+        exit 2
+      fi
+      configuration_mode="maven"
+      shift
+      ;;
+    --gradle-only)
+      if [[ "$configuration_mode" == "maven" ]]; then
+        echo "--maven-only and --gradle-only cannot be used together" >&2
+        exit 2
+      fi
+      configuration_mode="gradle"
       shift
       ;;
     --skip-provider-checks)
@@ -67,17 +87,41 @@ while (($# > 0)); do
   esac
 done
 
+configure_maven=false
+configure_gradle=false
+case "$configuration_mode" in
+  both)
+    configure_maven=true
+    configure_gradle=true
+    ;;
+  maven)
+    configure_maven=true
+    ;;
+  gradle)
+    configure_gradle=true
+    ;;
+esac
+
 if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "SubAuth currently supports macOS only." >&2
   exit 1
 fi
 
-for command_name in java mvn gh; do
+for command_name in java gh; do
   if ! command -v "$command_name" >/dev/null 2>&1; then
     echo "Required command is missing: $command_name" >&2
     exit 1
   fi
 done
+if [[ "$configure_maven" == "true" ]] && ! command -v mvn >/dev/null 2>&1; then
+  echo "Required command is missing for Maven setup: mvn" >&2
+  exit 1
+fi
+if [[ "$configure_maven" == "false" && -n "$package_version" ]] \
+    && ! command -v curl >/dev/null 2>&1; then
+  echo "Required command is missing for Gradle package verification: curl" >&2
+  exit 1
+fi
 
 java_version="$(java -version 2>&1 | awk -F '"' 'NR == 1 { print $2 }')"
 java_major="${java_version%%.*}"
@@ -119,26 +163,40 @@ fi
 
 echo "[ready] macOS $(sw_vers -productVersion)"
 echo "[ready] Java $java_version"
-echo "[ready] $(mvn --version | sed -n '1p')"
+if [[ "$configure_maven" == "true" ]]; then
+  echo "[ready] $(mvn --version | sed -n '1p')"
+fi
 echo "[ready] GitHub account $github_user"
 
 settings_file="${SUBAUTH_MAVEN_SETTINGS:-${HOME}/.m2/settings.xml}"
+gradle_properties_file="${SUBAUTH_GRADLE_PROPERTIES:-${HOME}/.gradle/gradle.properties}"
 if [[ "$check_only" == "false" ]]; then
   if [[ "$assume_yes" == "false" ]]; then
     if [[ ! -t 0 ]]; then
-      echo "Run interactively or pass --yes to update $settings_file." >&2
+      echo "Run interactively or pass --yes to update package settings." >&2
       exit 1
     fi
-    printf 'Configure SubAuth GitHub Packages in %s? [y/N] ' "$settings_file"
+    case "$configuration_mode" in
+      both) target_description="$settings_file and $gradle_properties_file" ;;
+      maven) target_description="$settings_file" ;;
+      gradle) target_description="$gradle_properties_file" ;;
+    esac
+    printf 'Configure SubAuth GitHub Packages in %s? [y/N] ' "$target_description"
     read -r answer
     if [[ ! "$answer" =~ ^[Yy]$ ]]; then
-      echo "Maven settings were not changed."
+      echo "Package settings were not changed."
       exit 0
     fi
   fi
 
-  SUBAUTH_SETUP_GITHUB_TOKEN="$github_token" \
-    java "$SETTINGS_HELPER" "$settings_file" "$github_user" "$REPOSITORY_URL"
+  if [[ "$configure_maven" == "true" ]]; then
+    SUBAUTH_SETUP_GITHUB_TOKEN="$github_token" \
+      java "$MAVEN_SETTINGS_HELPER" "$settings_file" "$github_user" "$REPOSITORY_URL"
+  fi
+  if [[ "$configure_gradle" == "true" ]]; then
+    SUBAUTH_SETUP_GITHUB_TOKEN="$github_token" \
+      java "$GRADLE_PROPERTIES_HELPER" "$gradle_properties_file" "$github_user"
+  fi
 fi
 
 ready_providers=0
@@ -167,20 +225,28 @@ if [[ "$skip_provider_checks" == "false" ]]; then
   fi
 
   if ((ready_providers == 0)); then
-    echo "[warn] No provider runtime is currently ready; Maven setup is still usable."
+    echo "[warn] No provider runtime is currently ready; package setup is still usable."
   fi
 fi
 
 if [[ -n "$package_version" ]]; then
-  if [[ "$check_only" == "true" && ! -f "$settings_file" ]]; then
+  if [[ "$configure_maven" == "true" && "$check_only" == "true" \
+      && ! -f "$settings_file" ]]; then
     echo "Cannot verify package $package_version because $settings_file does not exist." >&2
     exit 1
   fi
   echo "Verifying io.github.kchanis1223:subauth-spring-boot-starter:$package_version ..."
-  mvn --batch-mode --no-transfer-progress \
-    org.apache.maven.plugins:maven-dependency-plugin:3.10.0:get \
-    -Dartifact="io.github.kchanis1223:subauth-spring-boot-starter:${package_version}" \
-    -Dtransitive=true
+  if [[ "$configure_maven" == "true" ]]; then
+    mvn --batch-mode --no-transfer-progress --settings "$settings_file" \
+      org.apache.maven.plugins:maven-dependency-plugin:3.10.0:get \
+      -Dartifact="io.github.kchanis1223:subauth-spring-boot-starter:${package_version}" \
+      -Dtransitive=true
+  else
+    artifact_url="${REPOSITORY_URL}/io/github/kchanis1223/subauth-spring-boot-starter/${package_version}/subauth-spring-boot-starter-${package_version}.pom"
+    printf 'user = "%s:%s"\n' "$github_user" "$github_token" \
+      | curl --config - --location --fail --silent --show-error \
+          --output /dev/null "$artifact_url"
+  fi
   echo "[ready] SubAuth package $package_version"
 else
   echo "Package download was skipped; pass --version after the first internal release."
