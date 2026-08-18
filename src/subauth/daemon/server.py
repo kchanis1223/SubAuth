@@ -9,6 +9,7 @@ from pathlib import Path
 
 from subauth.config import Settings
 from subauth.logging import get_logger, log_event, redact_text
+from subauth.native import sanitize_native_payload
 from subauth.operations import ActiveRequestStore
 from subauth.protocol.models import (
     PROTOCOL_VERSION,
@@ -172,6 +173,19 @@ class SubAuthDaemon:
             )
             await writer.drain()
             return
+        response_mode = request.params.get("response_mode", "normalized")
+        if response_mode not in {"normalized", "normalized_with_native"}:
+            writer.write(
+                encode_message(
+                    self._error(
+                        request.id,
+                        "invalid_response_mode",
+                        "response_mode must be normalized or normalized_with_native",
+                    )
+                )
+            )
+            await writer.drain()
+            return
         name = str(request.params.get("provider", ""))
         try:
             adapter = self.registry.get(name)
@@ -265,17 +279,25 @@ class SubAuthDaemon:
         writer: asyncio.StreamWriter,
     ) -> int:
         event_count = 0
+        include_native = request.params.get("response_mode") == "normalized_with_native"
         async for provider_event in adapter.stream(request.params):
             event_type = provider_event.get("type")
             data = provider_event.get("data")
             if not isinstance(event_type, str) or not isinstance(data, Mapping):
                 continue
+            native_value = provider_event.get("native")
+            native = (
+                sanitize_native_payload(native_value)
+                if include_native and isinstance(native_value, Mapping)
+                else None
+            )
             writer.write(
                 encode_message(
                     Event(
                         request_id=request.id,
                         type=event_type,
                         data=data,
+                        native=native,
                     )
                 )
             )

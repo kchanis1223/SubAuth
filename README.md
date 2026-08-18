@@ -234,6 +234,26 @@ async with stream:
             await stream.cancel()
 ```
 
+Normalized events are the default. Integrations that need provider-specific
+metadata can opt into sanitized native runtime events without giving up the
+common lifecycle:
+
+```python
+stream = client.responses.stream(
+    provider="openai",
+    input="Explain this response",
+    response_mode="normalized_with_native",
+)
+async for event in stream:
+    print(event.type, event.data, event.native)
+```
+
+Native payloads retain the Codex App Server, Claude Code, or Antigravity event
+shape. Credentials, account identity, local paths, plugin details, and MCP
+configuration are redacted at the daemon boundary. Pure unwrapped raw mode is
+not exposed because it would remove stable completion, error, and cancellation
+semantics.
+
 SubAuth requests are deliberately stateless. The main service owns user/session
 identity and canonical conversation history, and constructs each request from
 the context it wants the model to receive. Every request starts a fresh provider

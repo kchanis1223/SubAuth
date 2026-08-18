@@ -119,6 +119,9 @@ class ClaudeRuntimeTests(unittest.IsolatedAsyncioTestCase):
             "CLAUDE_OK",
         )
         self.assertIn("policy_warning", events[0]["data"])
+        delta = next(event for event in events if event["type"] == "output.text.delta")
+        self.assertEqual(delta["native"]["runtime"], "claude-code")
+        self.assertEqual(delta["native"]["event"]["type"], "stream_event")
 
     async def test_runtime_error_redacts_injected_setup_token(self) -> None:
         secret = "secret-runtime-token"
@@ -139,6 +142,21 @@ class ClaudeRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(events[-1]["type"], "response.failed")
         self.assertNotIn(secret, repr(events))
         self.assertIn("[REDACTED]", repr(events))
+
+    async def test_native_mode_forwards_unmapped_stream_events(self) -> None:
+        events = [
+            event
+            async for event in ClaudeAdapter(self.runtime()).stream(
+                {
+                    "input": "Reply CLAUDE_OK",
+                    "response_mode": "normalized_with_native",
+                }
+            )
+        ]
+
+        native_event = next(event for event in events if event["type"] == "provider.event")
+        self.assertEqual(native_event["data"]["native_type"], "message_start")
+        self.assertEqual(native_event["native"]["runtime"], "claude-code")
 
 
 if __name__ == "__main__":

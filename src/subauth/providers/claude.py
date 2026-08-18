@@ -144,6 +144,7 @@ class ClaudeAdapter(ProviderAdapter):
         model = model_value if isinstance(model_value, str) and model_value != "auto" else None
         system_value = request.get("system")
         system = system_value if isinstance(system_value, str) and system_value else None
+        include_native = request.get("response_mode") == "normalized_with_native"
         started = False
         emitted_delta = False
         session_id: str | None = None
@@ -159,37 +160,51 @@ class ClaudeAdapter(ProviderAdapter):
                     session_id = self._string_or_none(message.get("session_id"))
                     selected_model = self._string_or_none(message.get("model")) or selected_model
                     if not started:
-                        yield self._started(session_id, selected_model)
+                        yield self._started(session_id, selected_model, message)
                         started = True
                 elif message_type == "stream_event":
                     event = message.get("event")
                     if not isinstance(event, dict):
+                        if include_native:
+                            yield self._provider_event(message, message_type)
                         continue
                     if event.get("type") != "content_block_delta":
+                        if include_native:
+                            yield self._provider_event(
+                                message,
+                                str(event.get("type") or message_type),
+                            )
                         continue
                     delta = event.get("delta")
                     if not isinstance(delta, dict) or delta.get("type") != "text_delta":
+                        if include_native:
+                            yield self._provider_event(
+                                message,
+                                str(event.get("type") or message_type),
+                            )
                         continue
                     text = delta.get("text")
                     if isinstance(text, str) and text:
                         if not started:
-                            yield self._started(session_id, selected_model)
+                            yield self._started(session_id, selected_model, message)
                             started = True
                         emitted_delta = True
                         yield {
                             "type": "output.text.delta",
                             "data": {"delta": text, "session_id": session_id},
+                            "native": self._native(message),
                         }
                 elif message_type == "result":
                     session_id = self._string_or_none(message.get("session_id")) or session_id
                     if not started:
-                        yield self._started(session_id, selected_model)
+                        yield self._started(session_id, selected_model, message)
                         started = True
                     result_text = message.get("result")
                     if not emitted_delta and isinstance(result_text, str) and result_text:
                         yield {
                             "type": "output.text.delta",
                             "data": {"delta": result_text, "session_id": session_id},
+                            "native": self._native(message),
                         }
                     if message.get("is_error") is True or message.get("subtype") != "success":
                         yield {
@@ -201,6 +216,7 @@ class ClaudeAdapter(ProviderAdapter):
                                 "error": result_text or message.get("subtype"),
                                 "policy_warning": CLAUDE_POLICY_WARNING,
                             },
+                            "native": self._native(message),
                         }
                     else:
                         yield {
@@ -213,12 +229,20 @@ class ClaudeAdapter(ProviderAdapter):
                                 "usage": message.get("usage"),
                                 "policy_warning": CLAUDE_POLICY_WARNING,
                             },
+                            "native": self._native(message),
                         }
                     return
+                elif include_native:
+                    yield self._provider_event(message, str(message_type or "unknown"))
         except ClaudeRuntimeError as error:
             yield self._failure("claude_runtime_error", str(error))
 
-    def _started(self, session_id: str | None, model: str | None) -> dict[str, Any]:
+    def _started(
+        self,
+        session_id: str | None,
+        model: str | None,
+        native_event: Mapping[str, Any],
+    ) -> dict[str, Any]:
         return {
             "type": "response.started",
             "data": {
@@ -229,6 +253,22 @@ class ClaudeAdapter(ProviderAdapter):
                 "model": model,
                 "policy_warning": CLAUDE_POLICY_WARNING,
             },
+            "native": self._native(native_event),
+        }
+
+    @staticmethod
+    def _native(event: Mapping[str, Any]) -> dict[str, Any]:
+        return {"runtime": "claude-code", "event": event}
+
+    def _provider_event(
+        self,
+        event: Mapping[str, Any],
+        native_type: str,
+    ) -> dict[str, Any]:
+        return {
+            "type": "provider.event",
+            "data": {"provider": self.name, "native_type": native_type},
+            "native": self._native(event),
         }
 
     def _failure(self, code: str, message: str) -> dict[str, Any]:

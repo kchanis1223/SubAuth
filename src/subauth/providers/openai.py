@@ -172,6 +172,7 @@ class OpenAIAdapter(ProviderAdapter):
             return
 
         model = request.get("model")
+        include_native = request.get("response_mode") == "normalized_with_native"
         thread_params: dict[str, Any] = {
             "approvalPolicy": "never",
             "ephemeral": True,
@@ -199,6 +200,13 @@ class OpenAIAdapter(ProviderAdapter):
                     "transport": TransportMode.OFFICIAL_RUNTIME.value,
                     "thread_id": thread_id,
                     "model": selected_model,
+                },
+                "native": {
+                    "runtime": "codex-app-server",
+                    "event": {
+                        "method": "thread/start",
+                        "result": thread_result,
+                    },
                 },
             }
 
@@ -236,6 +244,10 @@ class OpenAIAdapter(ProviderAdapter):
                                     "thread_id": thread_id,
                                     "turn_id": turn_id,
                                 },
+                                "native": {
+                                    "runtime": "codex-app-server",
+                                    "event": notification,
+                                },
                             }
                     elif method == "error" and not params.get("willRetry", False):
                         error = params.get("error")
@@ -246,6 +258,10 @@ class OpenAIAdapter(ProviderAdapter):
                                 "thread_id": thread_id,
                                 "turn_id": turn_id,
                                 "error": error,
+                            },
+                            "native": {
+                                "runtime": "codex-app-server",
+                                "event": notification,
                             },
                         }
                         return
@@ -270,8 +286,24 @@ class OpenAIAdapter(ProviderAdapter):
                                 "status": completed_status,
                                 "error": completed_turn.get("error"),
                             },
+                            "native": {
+                                "runtime": "codex-app-server",
+                                "event": notification,
+                            },
                         }
                         return
+                    elif include_native:
+                        yield {
+                            "type": "provider.event",
+                            "data": {
+                                "provider": self.name,
+                                "native_type": method,
+                            },
+                            "native": {
+                                "runtime": "codex-app-server",
+                                "event": notification,
+                            },
+                        }
             finally:
                 self._app_server.unsubscribe(notifications)
         except asyncio.CancelledError:

@@ -138,6 +138,7 @@ class GeminiAdapter(ProviderAdapter):
             return
 
         system_value = request.get("system")
+        include_native = request.get("response_mode") == "normalized_with_native"
         prompt = self._compose_prompt(
             input_text,
             system_value if isinstance(system_value, str) else None,
@@ -156,7 +157,7 @@ class GeminiAdapter(ProviderAdapter):
                             self._string_or_none(init.get("conversation_id")) or conversation_id
                         )
                     if not started:
-                        yield self._started(conversation_id, model, init)
+                        yield self._started(conversation_id, model, init, message)
                         started = True
                 elif event_type == "step_update":
                     step = message.get("step_update")
@@ -170,19 +171,26 @@ class GeminiAdapter(ProviderAdapter):
                             "runtime_tool_use_blocked",
                             "Antigravity attempted a tool call; SubAuth stopped the request.",
                             conversation_id=conversation_id,
+                            native_event=message,
                         )
                         return
                     if step.get("step_type") != "agent_response":
+                        if include_native:
+                            yield self._provider_event(
+                                message,
+                                str(step.get("step_type") or event_type),
+                            )
                         continue
                     text = step.get("text_delta")
                     if isinstance(text, str) and text:
                         if not started:
-                            yield self._started(conversation_id, model, None)
+                            yield self._started(conversation_id, model, None, message)
                             started = True
                         emitted_delta = True
                         yield {
                             "type": "output.text.delta",
                             "data": {"delta": text, "conversation_id": conversation_id},
+                            "native": self._native(message),
                         }
                 elif event_type == "result":
                     result = message.get("result")
@@ -191,13 +199,14 @@ class GeminiAdapter(ProviderAdapter):
                             "invalid_runtime_result",
                             "Antigravity returned an invalid result event.",
                             conversation_id=conversation_id,
+                            native_event=message,
                         )
                         return
                     conversation_id = (
                         self._string_or_none(result.get("conversation_id")) or conversation_id
                     )
                     if not started:
-                        yield self._started(conversation_id, model, None)
+                        yield self._started(conversation_id, model, None, message)
                         started = True
                     response = result.get("response")
                     if not emitted_delta and isinstance(response, str) and response:
@@ -207,12 +216,14 @@ class GeminiAdapter(ProviderAdapter):
                                 "delta": response,
                                 "conversation_id": conversation_id,
                             },
+                            "native": self._native(message),
                         }
                     if result.get("status") != "SUCCESS":
                         yield self._failure(
                             "antigravity_result_error",
                             str(result.get("error") or result.get("status") or "unknown error"),
                             conversation_id=conversation_id,
+                            native_event=message,
                         )
                     else:
                         yield {
@@ -225,8 +236,11 @@ class GeminiAdapter(ProviderAdapter):
                                 "usage": result.get("usage"),
                                 "policy_warning": GEMINI_POLICY_WARNING,
                             },
+                            "native": self._native(message),
                         }
                     return
+                elif include_native:
+                    yield self._provider_event(message, str(event_type or "unknown"))
             yield self._failure(
                 "incomplete_runtime_stream",
                 "Antigravity ended without a terminal result event.",
@@ -240,6 +254,7 @@ class GeminiAdapter(ProviderAdapter):
         conversation_id: str | None,
         model: str,
         init: Any,
+        native_event: Mapping[str, Any],
     ) -> dict[str, Any]:
         tools: list[Any] = []
         if isinstance(init, dict) and isinstance(init.get("tools"), list):
@@ -255,6 +270,7 @@ class GeminiAdapter(ProviderAdapter):
                 "runtime_tools_exposed": bool(tools),
                 "policy_warning": GEMINI_POLICY_WARNING,
             },
+            "native": self._native(native_event),
         }
 
     def _failure(
@@ -263,8 +279,9 @@ class GeminiAdapter(ProviderAdapter):
         message: str,
         *,
         conversation_id: str | None = None,
+        native_event: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
-        return {
+        failure: dict[str, Any] = {
             "type": "response.failed",
             "data": {
                 "code": code,
@@ -273,6 +290,24 @@ class GeminiAdapter(ProviderAdapter):
                 "conversation_id": conversation_id,
                 "policy_warning": GEMINI_POLICY_WARNING,
             },
+        }
+        if native_event is not None:
+            failure["native"] = self._native(native_event)
+        return failure
+
+    @staticmethod
+    def _native(event: Mapping[str, Any]) -> dict[str, Any]:
+        return {"runtime": "antigravity-cli", "event": event}
+
+    def _provider_event(
+        self,
+        event: Mapping[str, Any],
+        native_type: str,
+    ) -> dict[str, Any]:
+        return {
+            "type": "provider.event",
+            "data": {"provider": self.name, "native_type": native_type},
+            "native": self._native(event),
         }
 
     def _signed_out(self) -> ProviderStatus:

@@ -37,11 +37,14 @@ class Event:
     request_id: str
     type: str
     data: Mapping[str, Any] = field(default_factory=dict)
+    native: Mapping[str, Any] | None = None
     protocol: str = PROTOCOL_VERSION
 
 
 def encode_message(message: Request | Response | Event | Mapping[str, Any]) -> bytes:
     value = asdict(message) if isinstance(message, (Request, Response, Event)) else dict(message)
+    if isinstance(message, Event) and message.native is None:
+        value.pop("native", None)
     return json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8") + b"\n"
 
 
@@ -50,4 +53,3 @@ def decode_message(payload: bytes) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError("SubAuth protocol messages must be JSON objects")
     return value
-

@@ -18,7 +18,22 @@ class StreamingStubProviderAdapter(StubProviderAdapter):
     async def stream(self, request):
         del request
         yield {"type": "response.started", "data": {"provider": self.name}}
-        yield {"type": "output.text.delta", "data": {"delta": "OK"}}
+        yield {
+            "type": "output.text.delta",
+            "data": {"delta": "OK"},
+            "native": {
+                "runtime": "test-runtime",
+                "event": {
+                    "kind": "delta",
+                    "method": "mcpServer/startupStatus/updated",
+                    "params": {"server": "private-mcp-server"},
+                    "access_token": "must-not-leak",
+                    "cwd": "/Users/example/private-project",
+                    "instructionSources": ["/Users/example/private-project/AGENTS.md"],
+                    "tool_info": {"parameters": {"command": "read-private-file"}},
+                },
+            },
+        }
         yield {"type": "response.completed", "data": {"status": "completed"}}
 
 
@@ -74,6 +89,48 @@ class DaemonTests(unittest.IsolatedAsyncioTestCase):
             [event["type"] for event in events],
             ["response.started", "output.text.delta", "response.completed"],
         )
+        self.assertTrue(all("native" not in event for event in events))
+
+    async def test_native_mode_preserves_shape_and_redacts_private_values(self) -> None:
+        events = [
+            event
+            async for event in SubAuthClient(self.settings).stream(
+                "responses.create",
+                {
+                    "provider": "openai",
+                    "input": "Reply OK",
+                    "response_mode": "normalized_with_native",
+                },
+            )
+        ]
+
+        delta = next(event for event in events if event["type"] == "output.text.delta")
+        self.assertEqual(delta["native"]["runtime"], "test-runtime")
+        self.assertEqual(delta["native"]["event"]["kind"], "delta")
+        self.assertEqual(delta["native"]["event"]["access_token"], "[REDACTED]")
+        self.assertEqual(delta["native"]["event"]["cwd"], "[REDACTED]")
+        self.assertEqual(
+            delta["native"]["event"]["instructionSources"],
+            "[REDACTED]",
+        )
+        self.assertEqual(delta["native"]["event"]["params"], "[REDACTED]")
+        self.assertEqual(delta["native"]["event"]["tool_info"], "[REDACTED]")
+        self.assertNotIn("must-not-leak", repr(delta))
+        self.assertNotIn("private-project", repr(delta))
+        self.assertNotIn("private-mcp-server", repr(delta))
+        self.assertNotIn("read-private-file", repr(delta))
+
+    async def test_invalid_response_mode_is_rejected(self) -> None:
+        response = await SubAuthClient(self.settings).request(
+            "responses.create",
+            {
+                "provider": "openai",
+                "input": "Reply OK",
+                "response_mode": "raw",
+            },
+        )
+
+        self.assertEqual(response["error"]["code"], "invalid_response_mode")
 
     async def test_client_starts_daemon_on_first_connection(self) -> None:
         await self.daemon.close()

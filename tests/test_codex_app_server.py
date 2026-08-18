@@ -74,6 +74,12 @@ class CodexAppServerTests(unittest.IsolatedAsyncioTestCase):
             ),
             "OK",
         )
+        delta = next(event for event in events if event["type"] == "output.text.delta")
+        self.assertEqual(delta["native"]["runtime"], "codex-app-server")
+        self.assertEqual(
+            delta["native"]["event"]["method"],
+            "item/agentMessage/delta",
+        )
 
     async def test_openai_stream_does_not_silently_use_api_key_auth(self) -> None:
         worker = CodexAppServer((sys.executable, str(FIXTURE), "--api-key"))
@@ -84,6 +90,25 @@ class CodexAppServerTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(events[0]["type"], "response.failed")
         self.assertEqual(events[0]["data"]["code"], "subscription_not_ready")
+
+    async def test_openai_native_mode_forwards_unmapped_notifications(self) -> None:
+        worker = CodexAppServer((sys.executable, str(FIXTURE)))
+        adapter = OpenAIAdapter(worker)
+        self.addAsyncCleanup(adapter.close)
+
+        events = [
+            event
+            async for event in adapter.stream(
+                {
+                    "input": "Reply OK",
+                    "response_mode": "normalized_with_native",
+                }
+            )
+        ]
+
+        native_event = next(event for event in events if event["type"] == "provider.event")
+        self.assertEqual(native_event["data"]["native_type"], "turn/started")
+        self.assertEqual(native_event["native"]["runtime"], "codex-app-server")
 
 
 if __name__ == "__main__":

@@ -37,6 +37,40 @@ generator cleanup.
 returns a typed `ResponseResult`. A provider failure raises `SubAuthAPIError`
 with a stable SubAuth error code.
 
+## Response modes
+
+`response_mode="normalized"` is the default and preserves the original compact
+protocol. Events contain only the stable `request_id`, `type`, and `data`
+fields.
+
+`response_mode="normalized_with_native"` adds a typed `ResponseEvent.native`
+mapping. It contains `runtime` and the matching provider `event`, while the
+normal `type` and `data` fields continue to drive portable application logic.
+The daemon redacts credentials, account identity, local paths, plugins, and MCP
+configuration before serialization.
+
+Provider notifications without a common SubAuth equivalent are emitted as
+`provider.event` only in this opt-in mode. Their `data.native_type` supports
+lightweight filtering, while the complete sanitized payload remains under
+`native.event`.
+
+```python
+stream = client.responses.stream(
+    provider="claude",
+    input="Reply briefly",
+    response_mode="normalized_with_native",
+)
+async for event in stream:
+    if event.type == "output.text.delta":
+        print(event.data["delta"], end="")
+    if event.native is not None:
+        inspect_provider_event(event.native)
+```
+
+SubAuth intentionally does not expose an unwrapped `raw` mode. Provider-native
+schemas do not share terminal or cancellation semantics and may contain local
+runtime details. Unsupported values return `invalid_response_mode`.
+
 ## Stateless contract
 
 SubAuth does not create or retain application sessions, conversation history,
@@ -56,7 +90,7 @@ by `request_id`, and removes it at the terminal event.
 
 | Method | Purpose |
 | --- | --- |
-| `responses.create` | Stream a normalized provider response |
+| `responses.create` | Stream a normalized response with optional sanitized native data |
 | `responses.cancel` | Cancel an active request by request ID |
 
 The protocol remains version 1. These methods extend the method surface without

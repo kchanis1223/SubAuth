@@ -4,6 +4,7 @@ from subauth.protocol.models import PROTOCOL_VERSION
 from subauth.sdk import (
     AsyncSubAuth,
     ResponseEvent,
+    ResponseMode,
     ResponseResult,
     ResponseStream,
     SubAuthAPIError,
@@ -14,6 +15,7 @@ __all__ = [
     "AsyncSubAuth",
     "PROTOCOL_VERSION",
     "ResponseEvent",
+    "ResponseMode",
     "ResponseResult",
     "ResponseStream",
     "SubAuthAPIError",

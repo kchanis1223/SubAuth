@@ -44,6 +44,7 @@ captured with all credentials redacted.
 - typed asynchronous Python SDK: implemented
 - common request cancellation: implemented
 - stateless request ownership boundary: implemented; main service owns history
+- opt-in sanitized provider-native event preservation: implemented
 
 ## Phase 1: macOS daemon foundation
 
@@ -77,6 +78,7 @@ without Google authorization.
 ## Phase 3: common response API
 
 - text streaming (implemented)
+- normalized lifecycle plus sanitized native event mode (implemented)
 - multimodal input
 - files
 - hosted web search and code execution

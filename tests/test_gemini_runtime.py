@@ -94,6 +94,9 @@ class GeminiRuntimeTests(unittest.IsolatedAsyncioTestCase):
             "GEMINI_OK",
         )
         self.assertTrue(events[0]["data"]["runtime_tools_exposed"])
+        delta = next(event for event in events if event["type"] == "output.text.delta")
+        self.assertEqual(delta["native"]["runtime"], "antigravity-cli")
+        self.assertEqual(delta["native"]["event"]["event"], "step_update")
 
     async def test_stream_stops_when_runtime_attempts_tool_use(self) -> None:
         with patch.dict(os.environ, {"FAKE_AGY_TOOL": "1"}):
@@ -106,6 +109,21 @@ class GeminiRuntimeTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(events[-1]["type"], "response.failed")
         self.assertEqual(events[-1]["data"]["code"], "runtime_tool_use_blocked")
+
+    async def test_native_mode_forwards_unmapped_step_updates(self) -> None:
+        events = [
+            event
+            async for event in GeminiAdapter(self.runtime()).stream(
+                {
+                    "input": "Reply GEMINI_OK",
+                    "response_mode": "normalized_with_native",
+                }
+            )
+        ]
+
+        native_event = next(event for event in events if event["type"] == "provider.event")
+        self.assertEqual(native_event["data"]["native_type"], "user_input")
+        self.assertEqual(native_event["native"]["runtime"], "antigravity-cli")
 
 
 if __name__ == "__main__":

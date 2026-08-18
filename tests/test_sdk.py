@@ -55,7 +55,11 @@ class StatelessProviderAdapter(ProviderAdapter):
                 "model": request.get("model"),
             },
         }
-        yield {"type": "output.text.delta", "data": {"delta": "SDK_OK"}}
+        yield {
+            "type": "output.text.delta",
+            "data": {"delta": "SDK_OK"},
+            "native": {"runtime": "test-runtime", "event": {"kind": "delta"}},
+        }
         yield {"type": "response.completed", "data": {"status": "completed"}}
 
 
@@ -136,6 +140,19 @@ class SDKTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.adapter.requests[0]["system"], "Be concise")
         self.assertNotIn("session_id", self.adapter.requests[0])
         self.assertNotIn("provider_session_id", self.adapter.requests[1])
+
+    async def test_typed_event_exposes_opt_in_native_payload(self) -> None:
+        stream = self.client.responses.stream(
+            provider="openai",
+            input="Reply SDK_OK",
+            response_mode="normalized_with_native",
+        )
+
+        events = [event async for event in stream]
+        delta = next(event for event in events if event.type == "output.text.delta")
+
+        self.assertEqual(delta.native["runtime"], "test-runtime")
+        self.assertEqual(delta.native["event"]["kind"], "delta")
 
     async def test_continuation_handles_are_rejected(self) -> None:
         raw_client = SubAuthClient(self.settings, auto_start=False)

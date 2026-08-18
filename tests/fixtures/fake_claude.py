@@ -81,6 +81,10 @@ if "-p" in args and "stream-json" in args:
         },
         {
             "type": "stream_event",
+            "event": {"type": "message_start", "message": {"role": "assistant"}},
+        },
+        {
+            "type": "stream_event",
             "event": {
                 "type": "content_block_delta",
                 "delta": {"type": "text_delta", "text": "CLAUDE"},

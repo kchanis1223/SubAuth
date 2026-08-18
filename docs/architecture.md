@@ -37,6 +37,20 @@ never accepted as continuation handles.
 The only transient daemon state is an active provider task keyed by request ID.
 It exists solely for cancellation and is removed when the request terminates.
 
+## Provider-native event preservation
+
+The stable response envelope is provider-neutral. The default `normalized`
+mode contains only common lifecycle and text events. The opt-in
+`normalized_with_native` mode adds the corresponding native Codex App Server,
+Claude Code, or Antigravity event without replacing the common event type.
+Native notifications with no common equivalent use the additive
+`provider.event` type and never appear in default normalized streams.
+
+Native data crosses a mandatory daemon redaction boundary. Credential-like
+fields, account identity, local paths, plugin metadata, and MCP configuration
+are replaced before the event reaches a client. Provider-native schemas remain
+runtime-version-specific and are not part of SubAuth's portability guarantee.
+
 ## Credential broker
 
 Provider-owned stored login remains the first choice for official runtimes. For

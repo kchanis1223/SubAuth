@@ -69,6 +69,17 @@ for line in sys.stdin:
         thread_id = params["threadId"]
         notifications = [
             {
+                "method": "turn/started",
+                "params": {
+                    "threadId": thread_id,
+                    "turn": {
+                        "id": "turn-test",
+                        "items": [],
+                        "status": "inProgress",
+                    },
+                },
+            },
+            {
                 "method": "item/agentMessage/delta",
                 "params": {
                     "threadId": thread_id,

@@ -11,6 +11,7 @@ from subauth.config import Settings
 
 
 ProviderName = Literal["openai", "claude", "gemini"]
+ResponseMode = Literal["normalized", "normalized_with_native"]
 TERMINAL_EVENT_TYPES = {
     "response.completed",
     "response.failed",
@@ -33,18 +34,21 @@ class ResponseEvent:
     request_id: str
     type: str
     data: Mapping[str, Any] = field(default_factory=dict)
+    native: Mapping[str, Any] | None = None
 
     @classmethod
     def from_message(cls, message: Mapping[str, Any]) -> ResponseEvent:
         request_id = message.get("request_id")
         event_type = message.get("type")
         data = message.get("data")
+        native = message.get("native")
         if not isinstance(request_id, str) or not isinstance(event_type, str):
             raise SubAuthError("Invalid response event received from the daemon")
         return cls(
             request_id=request_id,
             type=event_type,
             data=dict(data) if isinstance(data, Mapping) else {},
+            native=dict(native) if isinstance(native, Mapping) else None,
         )
 
 
@@ -133,11 +137,13 @@ class AsyncResponses:
         input: str,
         model: str = "auto",
         system: str | None = None,
+        response_mode: ResponseMode = "normalized",
     ) -> ResponseStream:
         params: dict[str, Any] = {
             "provider": provider,
             "input": input,
             "model": model,
+            "response_mode": response_mode,
         }
         if system is not None:
             params["system"] = system
@@ -150,12 +156,14 @@ class AsyncResponses:
         input: str,
         model: str = "auto",
         system: str | None = None,
+        response_mode: ResponseMode = "normalized",
     ) -> ResponseResult:
         stream = self.stream(
             provider=provider,
             input=input,
             model=model,
             system=system,
+            response_mode=response_mode,
         )
         events = [event async for event in stream]
         failed = next((event for event in events if event.type == "response.failed"), None)

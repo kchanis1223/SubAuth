@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 
-from subauth.protocol.models import Request, decode_message, encode_message  # noqa: E402
+from subauth.protocol.models import Event, Request, decode_message, encode_message  # noqa: E402
 
 
 class ProtocolTests(unittest.TestCase):
@@ -26,7 +26,25 @@ class ProtocolTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "JSON objects"):
             decode_message(b"[]\n")
 
+    def test_normalized_event_omits_empty_native_payload(self) -> None:
+        event = Event(request_id="request-1", type="response.started")
+
+        decoded = decode_message(encode_message(event))
+
+        self.assertNotIn("native", decoded)
+
+    def test_event_can_include_native_payload(self) -> None:
+        event = Event(
+            request_id="request-1",
+            type="output.text.delta",
+            data={"delta": "OK"},
+            native={"runtime": "test", "event": {"kind": "delta"}},
+        )
+
+        decoded = decode_message(encode_message(event))
+
+        self.assertEqual(decoded["native"]["event"]["kind"], "delta")
+
 
 if __name__ == "__main__":
     unittest.main()
-

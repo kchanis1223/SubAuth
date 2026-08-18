@@ -61,6 +61,11 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("prompt")
     run.add_argument("--model", default="auto")
     run.add_argument("--system")
+    run.add_argument(
+        "--response-mode",
+        choices=("normalized", "normalized_with_native"),
+        default="normalized",
+    )
     return parser
 
 
@@ -126,9 +131,15 @@ async def _run(
     prompt: str,
     model: str,
     system: str | None,
+    response_mode: str,
 ) -> int:
     _warn_provider_policy(provider)
-    params = {"provider": provider, "input": prompt, "model": model}
+    params = {
+        "provider": provider,
+        "input": prompt,
+        "model": model,
+        "response_mode": response_mode,
+    }
     if system:
         params["system"] = system
     failed = False
@@ -257,6 +268,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 args.prompt,
                 args.model,
                 args.system,
+                args.response_mode,
             )
         )
     raise AssertionError(f"Unhandled command: {args.command}")
