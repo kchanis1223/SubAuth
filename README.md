@@ -38,13 +38,13 @@ The build produces:
 
 ## Internal package distribution
 
-Organization builds are published to the private GitHub Packages registry with
-versions such as `0.2.0-internal.1`. On an authorized developer Mac, run the
-one-time setup and optionally verify a published version:
+Organization builds are published to the private GitHub Packages registry. The
+current compatibility release is `0.2.0-internal.2`. On an authorized developer
+Mac, run the one-time setup and optionally verify the published version:
 
 ```bash
 gh auth refresh -h github.com -s read:packages
-scripts/setup-internal.sh --version 0.2.0-internal.1
+scripts/setup-internal.sh --version 0.2.0-internal.2
 ```
 
 The setup configures Maven authentication and repository discovery in
