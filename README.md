@@ -42,6 +42,7 @@ Spring Boot 애플리케이션
 GitHub CLI로 로그인하고 내부 패키지를 읽을 수 있는 권한을 추가합니다.
 
 ```bash
+brew install gh
 gh auth login
 gh auth refresh -h github.com -s read:packages
 ```
