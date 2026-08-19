@@ -33,7 +33,7 @@ git clone https://github.com/kchanis1223/SubAuth.git
 9. HTTP API 경로를 임의로 `/chat`이라고 가정하지 않습니다. 기존 Controller를
    확인하고, 새 API가 필요하면 사용자에게 알립니다.
 
-현재 배포 버전은 `0.2.0-internal.2`입니다.
+현재 배포 버전은 `0.2.0-internal.3`입니다.
 
 ## 1. 프로젝트 확인
 
@@ -74,13 +74,13 @@ SubAuth 저장소가 로컬에 있다면 해당 저장소의 설정 스크립트
 Gradle:
 
 ```bash
-./scripts/setup-internal.sh --yes --gradle-only --version 0.2.0-internal.2
+./scripts/setup-internal.sh --yes --gradle-only --version 0.2.0-internal.3
 ```
 
 Maven:
 
 ```bash
-./scripts/setup-internal.sh --yes --maven-only --version 0.2.0-internal.2
+./scripts/setup-internal.sh --yes --maven-only --version 0.2.0-internal.3
 ```
 
 이 스크립트가 수정하는 전역 파일은 Gradle의 `~/.gradle/gradle.properties` 또는
@@ -128,7 +128,7 @@ mavenCentral {
 기존 `dependencies`에 다음 한 줄을 추가합니다.
 
 ```groovy
-implementation 'io.github.kchanis1223:subauth-spring-boot-starter:0.2.0-internal.2'
+implementation 'io.github.kchanis1223:subauth-spring-boot-starter:0.2.0-internal.3'
 ```
 
 ### Gradle Kotlin
@@ -163,7 +163,7 @@ repositories {
 }
 
 dependencies {
-    implementation("io.github.kchanis1223:subauth-spring-boot-starter:0.2.0-internal.2")
+    implementation("io.github.kchanis1223:subauth-spring-boot-starter:0.2.0-internal.3")
 }
 ```
 
@@ -176,7 +176,7 @@ dependencies {
 <dependency>
     <groupId>io.github.kchanis1223</groupId>
     <artifactId>subauth-spring-boot-starter</artifactId>
-    <version>0.2.0-internal.2</version>
+    <version>0.2.0-internal.3</version>
 </dependency>
 ```
 

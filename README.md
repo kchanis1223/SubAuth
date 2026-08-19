@@ -27,7 +27,7 @@ Spring Boot 애플리케이션
 - GitHub Packages 인증에 사용할 GitHub 계정
 - Codex, Claude Code, Antigravity 중 하나 이상의 로그인된 런타임
 
-현재 배포 버전은 `0.2.0-internal.2`입니다.
+현재 배포 버전은 `0.2.0-internal.3`입니다.
 
 적용할 때 바꾸는 것은 세 가지입니다.
 
@@ -84,13 +84,13 @@ Gradle 프로젝트(`build.gradle` 또는 `build.gradle.kts`)를 사용한다면
 실행합니다.
 
 ```bash
-./scripts/setup-internal.sh --gradle-only --version 0.2.0-internal.2
+./scripts/setup-internal.sh --gradle-only --version 0.2.0-internal.3
 ```
 
 Maven 프로젝트(`pom.xml`)를 사용한다면 다음 명령을 실행합니다.
 
 ```bash
-./scripts/setup-internal.sh --maven-only --version 0.2.0-internal.2
+./scripts/setup-internal.sh --maven-only --version 0.2.0-internal.3
 ```
 
 이 스크립트는 다음 항목을 확인하고 설정합니다.
@@ -153,7 +153,7 @@ repositories {
 
 ```groovy
 dependencies {
-    implementation 'io.github.kchanis1223:subauth-spring-boot-starter:0.2.0-internal.2'
+    implementation 'io.github.kchanis1223:subauth-spring-boot-starter:0.2.0-internal.3'
 }
 ```
 
@@ -169,7 +169,7 @@ dependencies {
 <dependency>
     <groupId>io.github.kchanis1223</groupId>
     <artifactId>subauth-spring-boot-starter</artifactId>
-    <version>0.2.0-internal.2</version>
+    <version>0.2.0-internal.3</version>
 </dependency>
 ```
 
@@ -398,7 +398,7 @@ SubAuth는 대화 내용을 저장하지 않습니다. 대화 이력은 기존 S
 
 ```bash
 gh auth refresh -h github.com -s read:packages
-./scripts/setup-internal.sh --gradle-only --version 0.2.0-internal.2
+./scripts/setup-internal.sh --gradle-only --version 0.2.0-internal.3
 ```
 
 Gradle을 사용한다면 `build.gradle`에 SubAuth 저장소가 있는지도 확인합니다.
