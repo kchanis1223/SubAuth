@@ -198,6 +198,24 @@ spring:
 기본 설정은 OpenAI, 자동 모델 선택, `medium` 추론 강도입니다. 실행할 때 환경변수로
 공급자와 모델을 변경할 수 있습니다.
 
+기본으로 사용할 공급자를 고정하려면 `provider` 줄의 마지막 값을 바꿉니다. 세 값을
+동시에 작성하는 것이 아니라 사용할 공급자 하나만 선택합니다.
+
+```yaml
+# OpenAI(Codex)를 기본값으로 사용
+provider: ${SUBAUTH_PROVIDER:openai}
+
+# Claude를 기본값으로 사용
+provider: ${SUBAUTH_PROVIDER:claude}
+
+# Gemini(Antigravity)를 기본값으로 사용
+provider: ${SUBAUTH_PROVIDER:gemini}
+```
+
+예를 들어 `provider: ${SUBAUTH_PROVIDER:claude}`로 설정하면 환경변수가 없을 때
+Claude를 사용합니다. 실행할 때 `SUBAUTH_PROVIDER=gemini`를 지정하면 설정 파일을
+수정하지 않고 해당 실행에서만 Gemini로 바뀝니다.
+
 기존 설정에 `${OPENAI_API_KEY}` 같은 API 키 자리표시자가 있다면 개발 설정에서
 제거하거나 운영용 설정 파일로 이동합니다. 값이 없는 자리표시자가 남아 있으면
 애플리케이션 시작이 실패할 수 있습니다.
@@ -229,6 +247,43 @@ public class AiService {
     }
 }
 ```
+
+### Codex에 이미지 보내기
+
+OpenAI 구독을 선택한 경우에는 Spring AI의 `Media`를 사용해 PNG 또는 JPEG 이미지를
+보낼 수 있습니다. `ChatClient`와 `Prompt`를 쓰는 기존 방식은 그대로입니다.
+
+```java
+import java.nio.file.Path;
+import java.util.List;
+
+import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.content.Media;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.util.MimeTypeUtils;
+
+public String describeImage(Path imagePath) {
+    Media image = Media.builder()
+            .mimeType(MimeTypeUtils.IMAGE_PNG)
+            .data(new FileSystemResource(imagePath))
+            .name(imagePath.getFileName().toString())
+            .build();
+    UserMessage message = UserMessage.builder()
+            .text("이 이미지의 내용을 설명해 주세요.")
+            .media(image)
+            .build();
+
+    return chat.prompt(new Prompt(List.of(message)))
+            .call()
+            .content();
+}
+```
+
+현재 Codex 이미지 입력은 요청당 최대 4개, 이미지당 10 MiB, 전체 20 MiB까지
+지원합니다. PNG와 JPEG의 실제 파일 형식도 확인합니다. 이미지는 Codex가 읽을 수
+있는 권한 제한 임시 파일로 만든 뒤 요청이 끝나거나 취소되면 삭제합니다. Claude와
+Gemini의 이미지 입력은 아직 지원하지 않습니다.
 
 ## 5. 공급자 로그인과 실행
 
@@ -380,7 +435,8 @@ SubAuth는 대화 내용을 저장하지 않습니다. 대화 이력은 기존 S
 
 | 지원 | 아직 지원하지 않음 |
 |---|---|
-| 텍스트 메시지 | 이미지, 음성, 파일 입력 |
+| 텍스트 메시지 | Claude·Gemini 이미지 입력 |
+| Codex PNG·JPEG 이미지 입력 | 음성, 일반 파일 입력 |
 | 동기 호출과 스트리밍 | Tool Callback과 MCP |
 | OpenAI, Claude, Gemini 선택 | 공급자 세션 이어쓰기 |
 | 모델과 effort 선택 | temperature, top-p, max-token 등의 생성 옵션 적용 |
@@ -389,8 +445,9 @@ SubAuth는 대화 내용을 저장하지 않습니다. 대화 이력은 기존 S
 구독 런타임이 적용할 수 없는 생성 옵션은 기본값으로 무시하고 호출을 계속합니다.
 해당 항목은 `ChatResponseMetadata`의 `ignoredOptions`에 기록됩니다. 실행 로그에도
 경고를 남기려면 `unsupported-options: warn`, 예외로 중단하려면
-`unsupported-options: reject`를 사용합니다. 이미지·파일·도구 호출처럼 요청의
-의미가 달라지는 기능은 이 설정과 관계없이 예외로 중단합니다.
+`unsupported-options: reject`를 사용합니다. 선택한 공급자가 지원하지 않는
+이미지·파일·도구 호출처럼 요청의 의미가 달라지는 기능은 이 설정과 관계없이
+예외로 중단합니다.
 
 ## 문제 해결
 
@@ -415,7 +472,8 @@ agy models
 
 ### `SubAuthUnsupportedCapabilityException`
 
-이미지·파일·도구 호출 등 현재 지원하지 않는 기능이 요청에 포함되어 있는지
+선택한 공급자가 지원하지 않는 이미지·파일·도구 호출이 요청에 포함되어 있는지
+확인합니다. Codex 이미지는 PNG 또는 JPEG인지, 파일 크기와 개수가 제한 이내인지도
 확인합니다. `unsupported-options: reject`를 사용 중이라면 `temperature`,
 `max-tokens` 같은 생성 옵션도 예외의 원인이 됩니다. 기본값인 `ignore`로 바꾸거나
 해당 옵션을 제거합니다.

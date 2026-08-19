@@ -39,7 +39,8 @@ AI generation.
 | Coexistence with other `ChatModel` beans | Supported |
 | Configuration-only official-provider switch | Supported |
 | Tool callbacks | Not yet supported |
-| Media and files | Not yet supported |
+| PNG/JPEG `Media` input through Codex | Supported |
+| Claude/Gemini media, audio, and general files | Not yet supported |
 | Structured output | Not yet supported |
 | Temperature, top-p, penalties, token limits, stop sequences | Ignored by default; configurable as warn or reject |
 | Native provider session continuation | Intentionally unsupported |
@@ -49,8 +50,9 @@ ignored by default so an existing Spring AI service can still be exercised.
 Their Spring AI names are exposed in `ChatResponseMetadata.ignoredOptions`.
 Set `spring.ai.subauth.unsupported-options` to `warn` to also log a warning, or
 to `reject` to raise `SubAuthUnsupportedCapabilityException` as before.
-Capability mismatches that change request meaning, including media, files, and
-tool calls, are always rejected.
+Capability mismatches that change request meaning, including unsupported media,
+files, and tool calls, are always rejected. Codex image input accepts at most
+four PNG/JPEG images per request, 10 MiB per image and 20 MiB total.
 
 SubAuth does not fabricate missing usage or finish-reason data. When a runtime
 does not reveal its effective model, the configured model is used, or `auto`
@@ -59,6 +61,7 @@ is reported when runtime selection was requested.
 Provider adapters expose `RuntimeCapabilities`. Prompt options, effort values,
 media, assistant tool calls, and tool-result messages are checked against the
 selected adapter before subscription authentication or inference begins.
+Codex additionally checks the selected model's advertised input modalities.
 
 ## Effort
 

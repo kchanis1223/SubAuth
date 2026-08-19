@@ -3,7 +3,9 @@ package io.github.kchanis1223.subauth.runtime.openai;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -14,10 +16,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.kchanis1223.subauth.SubAuthEffort;
 import io.github.kchanis1223.subauth.SubAuthException;
 import io.github.kchanis1223.subauth.SubAuthProvider;
+import io.github.kchanis1223.subauth.SubAuthUnsupportedCapabilityException;
 import io.github.kchanis1223.subauth.runtime.ConversationRenderer;
 import io.github.kchanis1223.subauth.runtime.RuntimeAdapter;
 import io.github.kchanis1223.subauth.runtime.RuntimeCapabilities;
+import io.github.kchanis1223.subauth.runtime.RuntimeContent;
 import io.github.kchanis1223.subauth.runtime.RuntimeEvent;
+import io.github.kchanis1223.subauth.runtime.RuntimeOption;
 import io.github.kchanis1223.subauth.runtime.RuntimeProbe;
 import io.github.kchanis1223.subauth.runtime.RuntimeRequest;
 import io.github.kchanis1223.subauth.runtime.RuntimeUsage;
@@ -25,13 +30,13 @@ import reactor.core.publisher.Flux;
 
 public final class CodexRuntimeAdapter implements RuntimeAdapter {
     private final ObjectMapper objectMapper;
-    private final CodexAppServerClient client;
+    private final CodexAppServerTransport client;
 
     public CodexRuntimeAdapter(ObjectMapper objectMapper, String command, Duration requestTimeout) {
         this(objectMapper, new CodexAppServerClient(objectMapper, command, requestTimeout));
     }
 
-    CodexRuntimeAdapter(ObjectMapper objectMapper, CodexAppServerClient client) {
+    CodexRuntimeAdapter(ObjectMapper objectMapper, CodexAppServerTransport client) {
         this.objectMapper = objectMapper;
         this.client = client;
     }
@@ -40,7 +45,9 @@ public final class CodexRuntimeAdapter implements RuntimeAdapter {
 
     @Override
     public RuntimeCapabilities capabilities() {
-        return RuntimeCapabilities.textOnly(Set.of(SubAuthEffort.values()));
+        return new RuntimeCapabilities(
+                true, true, true, true, false, false,
+                Set.of(SubAuthEffort.values()), Set.of(RuntimeOption.MODEL, RuntimeOption.EFFORT));
     }
 
     @Override
@@ -50,19 +57,18 @@ public final class CodexRuntimeAdapter implements RuntimeAdapter {
             JsonNode account = accountResult.get("account");
             JsonNode modelResult = client.request(
                     "model/list", Map.of("includeHidden", false, "limit", 100));
-            List<String> models = new ArrayList<>();
-            modelResult.path("data").forEach(model -> {
-                String id = model.path("id").asText();
-                if (!id.isBlank()) models.add(id);
-            });
+            ModelCatalog catalog = modelCatalog(modelResult.path("data"));
             boolean ready = account != null && account.isObject()
                     && "chatgpt".equals(account.path("type").asText());
             String plan = account == null ? null : textOrNull(account.get("planType"));
-            Map<String, Object> metadata = plan == null ? Map.of() : Map.of("planType", plan);
+            Map<String, Object> metadata = new LinkedHashMap<>();
+            if (plan != null) metadata.put("planType", plan);
+            if (catalog.defaultModel() != null) metadata.put("defaultModel", catalog.defaultModel());
+            metadata.put("modelInputModalities", catalog.inputModalities());
             return new RuntimeProbe(provider(), true, ready, null,
                     ready ? "ChatGPT subscription is ready through Codex App Server."
                             : "A ChatGPT subscription login is required.",
-                    models, metadata);
+                    catalog.models(), metadata);
         }
         catch (Exception error) {
             return new RuntimeProbe(provider(), false, false, null, error.getMessage(), List.of(), Map.of());
@@ -90,21 +96,20 @@ public final class CodexRuntimeAdapter implements RuntimeAdapter {
                 String system = ConversationRenderer.system(request);
                 if (!system.isBlank()) threadParams.put("baseInstructions", system);
 
-                try {
+                try (CodexTurnInput turnInput = validatedTurnInput(request, status)) {
                     JsonNode threadResult = client.request("thread/start", threadParams);
                     String threadId = threadResult.path("thread").path("id").asText();
                     if (threadId.isBlank()) throw new SubAuthException(
                             "runtime_protocol_error", "Codex App Server did not return a thread id");
                     threadIdRef.set(threadId);
                     String model = textOrNull(threadResult.get("model"));
-                    Map<String, Object> metadata = metadata(model, threadId, null);
+                    Map<String, Object> metadata = metadata(model, threadId, null, turnInput.mediaCount());
                     sink.next(RuntimeEvent.started(metadata));
 
-                    try (CodexAppServerClient.Subscription subscription = client.subscribe()) {
+                    try (CodexAppServerTransport.Subscription subscription = client.subscribe()) {
                         JsonNode turnResult = client.request("turn/start", Map.of(
                                 "threadId", threadId,
-                                "input", List.of(Map.of(
-                                        "type", "text", "text", ConversationRenderer.conversation(request)))));
+                                "input", turnInput.values()));
                         String turnId = turnResult.path("turn").path("id").asText();
                         if (turnId.isBlank()) throw new SubAuthException(
                                 "runtime_protocol_error", "Codex App Server did not return a turn id");
@@ -121,7 +126,7 @@ public final class CodexRuntimeAdapter implements RuntimeAdapter {
                             if ("item/agentMessage/delta".equals(method)) {
                                 String delta = params.path("delta").asText();
                                 if (!delta.isEmpty()) sink.next(RuntimeEvent.delta(
-                                        delta, metadata(model, threadId, turnId)));
+                                        delta, metadata(model, threadId, turnId, turnInput.mediaCount())));
                             }
                             else if ("error".equals(method) && !params.path("willRetry").asBoolean(false)) {
                                 throw new SubAuthException("codex_runtime_error", "Codex App Server returned an error");
@@ -133,7 +138,7 @@ public final class CodexRuntimeAdapter implements RuntimeAdapter {
                                     throw new SubAuthException("codex_runtime_error", "Codex turn did not complete successfully");
                                 }
                                 sink.next(RuntimeEvent.completed(
-                                        metadata(model, threadId, turnId),
+                                        metadata(model, threadId, turnId, turnInput.mediaCount()),
                                         usage(turn.path("usage")),
                                         finishReason(turn)));
                                 sink.complete();
@@ -181,7 +186,8 @@ public final class CodexRuntimeAdapter implements RuntimeAdapter {
         return new RuntimeUsage(input, output, total, null, null, nativeUsage);
     }
 
-    private Map<String, Object> metadata(String model, String threadId, String turnId) {
+    private Map<String, Object> metadata(
+            String model, String threadId, String turnId, int mediaCount) {
         Map<String, Object> metadata = new HashMap<>();
         if (model != null) metadata.put("model", model);
         metadata.put("threadId", threadId);
@@ -189,7 +195,59 @@ public final class CodexRuntimeAdapter implements RuntimeAdapter {
             metadata.put("turnId", turnId);
             metadata.put("responseId", turnId);
         }
+        if (mediaCount > 0) metadata.put("mediaCount", mediaCount);
         return metadata;
+    }
+
+    private void validateImageModel(RuntimeRequest request, RuntimeProbe status) {
+        boolean hasImages = request.messages().stream()
+                .flatMap(message -> message.contents().stream())
+                .anyMatch(RuntimeContent.Media.class::isInstance);
+        if (!hasImages) return;
+
+        String selectedModel = request.model();
+        if (selectedModel == null) {
+            Object defaultModel = status.metadata().get("defaultModel");
+            if (defaultModel instanceof String value) selectedModel = value;
+        }
+        if (selectedModel == null) return;
+
+        Object rawCatalog = status.metadata().get("modelInputModalities");
+        if (!(rawCatalog instanceof Map<?, ?> catalog)) return;
+        Object rawModalities = catalog.get(selectedModel);
+        if (rawModalities instanceof Collection<?> modalities && !modalities.contains("image")) {
+            throw new SubAuthUnsupportedCapabilityException(
+                    "The selected Codex model does not support image input: " + selectedModel);
+        }
+    }
+
+    private CodexTurnInput validatedTurnInput(RuntimeRequest request, RuntimeProbe status) {
+        validateImageModel(request, status);
+        return CodexTurnInput.create(request);
+    }
+
+    private ModelCatalog modelCatalog(JsonNode data) {
+        List<String> models = new ArrayList<>();
+        Map<String, List<String>> inputModalities = new LinkedHashMap<>();
+        AtomicReference<String> defaultModel = new AtomicReference<>();
+        data.forEach(model -> {
+            String id = model.path("id").asText();
+            if (id.isBlank()) return;
+            models.add(id);
+            List<String> modalities = new ArrayList<>();
+            JsonNode advertised = model.get("inputModalities");
+            if (advertised == null || !advertised.isArray()) {
+                modalities.addAll(List.of("text", "image"));
+            }
+            else {
+                advertised.forEach(value -> {
+                    if (value.isTextual()) modalities.add(value.asText());
+                });
+            }
+            inputModalities.put(id, List.copyOf(modalities));
+            if (model.path("isDefault").asBoolean(false)) defaultModel.set(id);
+        });
+        return new ModelCatalog(List.copyOf(models), Map.copyOf(inputModalities), defaultModel.get());
     }
 
     private static Integer firstInteger(JsonNode node, String... names) {
@@ -208,6 +266,11 @@ public final class CodexRuntimeAdapter implements RuntimeAdapter {
         String value = textOrNull(turn.get("finishReason"));
         return value == null ? textOrNull(turn.get("finish_reason")) : value;
     }
+
+    private record ModelCatalog(
+            List<String> models,
+            Map<String, List<String>> inputModalities,
+            String defaultModel) {}
 
     @Override
     public void close() {

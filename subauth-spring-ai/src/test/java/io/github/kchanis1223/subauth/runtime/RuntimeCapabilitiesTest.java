@@ -35,7 +35,7 @@ class RuntimeCapabilitiesTest {
                 .doesNotContain(SubAuthEffort.MINIMAL);
         assertThat(gemini.efforts()).containsExactlyInAnyOrder(
                 SubAuthEffort.LOW, SubAuthEffort.MEDIUM, SubAuthEffort.HIGH);
-        assertThat(openAi.media()).isFalse();
+        assertThat(openAi.media()).isTrue();
         assertThat(claude.toolCalls()).isFalse();
         assertThat(gemini.toolResults()).isFalse();
     }

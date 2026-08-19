@@ -3,6 +3,8 @@ package io.github.kchanis1223.subauth;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import java.util.function.Function;
 
 import io.github.kchanis1223.subauth.runtime.RuntimeCapabilities;
@@ -22,6 +24,11 @@ import org.springframework.ai.content.MediaContent;
 import org.springframework.ai.model.tool.ToolCallingChatOptions;
 
 final class PromptRuntimeMapper {
+    private static final Set<String> SUPPORTED_IMAGE_TYPES = Set.of("image/png", "image/jpeg");
+    private static final int MAX_MEDIA_ITEMS = 4;
+    private static final long MAX_MEDIA_ITEM_BYTES = 10L * 1024 * 1024;
+    private static final long MAX_MEDIA_TOTAL_BYTES = 20L * 1024 * 1024;
+
     private PromptRuntimeMapper() {}
 
     static MappingResult map(
@@ -51,8 +58,9 @@ final class PromptRuntimeMapper {
         List<String> ignoredOptions = unsupportedOptions(
                 requestOptions, capabilities, unsupportedOptionsPolicy);
 
+        MediaBudget mediaBudget = new MediaBudget();
         List<RuntimeMessage> messages = prompt.getInstructions().stream()
-                .map(message -> mapMessage(message, capabilities))
+                .map(message -> mapMessage(message, capabilities, mediaBudget))
                 .toList();
         RuntimeRequest request = new RuntimeRequest(
                 provider, messages, normalizeModel(model), effort, timeout);
@@ -60,7 +68,8 @@ final class PromptRuntimeMapper {
         return new MappingResult(request, ignoredOptions);
     }
 
-    private static RuntimeMessage mapMessage(Message message, RuntimeCapabilities capabilities) {
+    private static RuntimeMessage mapMessage(
+            Message message, RuntimeCapabilities capabilities, MediaBudget mediaBudget) {
         RuntimeRole role = mapRole(message.getMessageType());
         List<RuntimeContent> contents = new ArrayList<>();
 
@@ -75,7 +84,8 @@ final class PromptRuntimeMapper {
             if (text != null) contents.add(new RuntimeContent.Text(text));
             if (message instanceof MediaContent mediaContent && !mediaContent.getMedia().isEmpty()) {
                 require(capabilities.media(), "media content");
-                mediaContent.getMedia().stream().map(PromptRuntimeMapper::mapMedia).forEach(contents::add);
+                require(role == RuntimeRole.USER, "media content outside user messages");
+                mediaContent.getMedia().stream().map(mediaBudget::map).forEach(contents::add);
             }
             if (message instanceof AssistantMessage assistantMessage && assistantMessage.hasToolCalls()) {
                 require(capabilities.toolCalls(), "assistant tool calls");
@@ -89,11 +99,6 @@ final class PromptRuntimeMapper {
                     "SubAuth cannot map an empty Spring AI message");
         }
         return new RuntimeMessage(role, contents, message.getMetadata());
-    }
-
-    private static RuntimeContent.Media mapMedia(Media media) {
-        return new RuntimeContent.Media(
-                media.getMimeType().toString(), media.getDataAsByteArray(), media.getId(), media.getName());
     }
 
     private static RuntimeRole mapRole(MessageType type) {
@@ -165,4 +170,56 @@ final class PromptRuntimeMapper {
     }
 
     record MappingResult(RuntimeRequest request, List<String> ignoredOptions) {}
+
+    private static final class MediaBudget {
+        private int items;
+        private long totalBytes;
+
+        RuntimeContent.Media map(Media media) {
+            if (++items > MAX_MEDIA_ITEMS) {
+                throw new SubAuthException(
+                        "too_many_media_items",
+                        "SubAuth accepts at most " + MAX_MEDIA_ITEMS + " images per request");
+            }
+            String mimeType = media.getMimeType().toString().toLowerCase(Locale.ROOT);
+            if (!SUPPORTED_IMAGE_TYPES.contains(mimeType)) {
+                throw new SubAuthUnsupportedCapabilityException(
+                        "SubAuth currently supports only PNG and JPEG image input, not " + mimeType);
+            }
+            byte[] data = media.getDataAsByteArray();
+            if (data.length == 0) {
+                throw new SubAuthException("empty_media", "SubAuth received an empty image");
+            }
+            if (data.length > MAX_MEDIA_ITEM_BYTES) {
+                throw new SubAuthException(
+                        "media_too_large", "Each SubAuth image must be 10 MiB or smaller");
+            }
+            totalBytes += data.length;
+            if (totalBytes > MAX_MEDIA_TOTAL_BYTES) {
+                throw new SubAuthException(
+                        "media_total_too_large", "SubAuth image input must total 20 MiB or less");
+            }
+            if (!hasExpectedSignature(mimeType, data)) {
+                throw new SubAuthException(
+                        "invalid_media_data", "Image bytes do not match declared MIME type " + mimeType);
+            }
+            return new RuntimeContent.Media(mimeType, data, media.getId(), media.getName());
+        }
+
+        private boolean hasExpectedSignature(String mimeType, byte[] data) {
+            if ("image/png".equals(mimeType)) {
+                byte[] signature = new byte[] {
+                        (byte) 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a };
+                if (data.length < signature.length) return false;
+                for (int index = 0; index < signature.length; index++) {
+                    if (data[index] != signature[index]) return false;
+                }
+                return true;
+            }
+            return data.length >= 3
+                    && data[0] == (byte) 0xff
+                    && data[1] == (byte) 0xd8
+                    && data[2] == (byte) 0xff;
+        }
+    }
 }

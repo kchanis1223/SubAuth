@@ -43,21 +43,24 @@ adapter renders them for its CLI:
 - `RuntimeCapabilities` declares the roles, content types, effort values, and
   options each adapter can actually carry.
 
-The current Codex, Claude Code, and Antigravity transports all declare a
-text-only capability profile. Structured media and tool values exist in the
-internal model so they can be implemented without redesigning the request
-boundary, but are rejected before a CLI process starts today. Claude accepts
-low through max effort except minimal; Antigravity accepts low, medium, and
-high; Codex accepts the SubAuth effort vocabulary and leaves final
-model/effort compatibility to its runtime.
+Codex accepts text plus PNG/JPEG media on user messages. Each image is validated,
+materialized as a permission-restricted request-scoped temporary file, and sent
+to Codex App Server as a `localImage` input item in its original content order.
+The temporary workspace is deleted after completion, cancellation, timeout, or
+failure. The adapter also rejects an image request when the selected Codex model
+advertises no image input modality. Claude Code and Antigravity remain text-only.
+Structured tool values stay in the internal model but are rejected before a CLI
+process starts. Claude accepts low through max effort except minimal;
+Antigravity accepts low, medium, and high; Codex accepts the SubAuth effort
+vocabulary and leaves final model/effort compatibility to its runtime.
 
 Portable generation controls such as temperature, top-p, token limits,
 penalties, and stop sequences are a softer compatibility boundary. When the
 selected subscription runtime cannot carry one, the default `ignore` policy
 continues the request and records its Spring AI name in response metadata.
 The `warn` policy also writes a warning, while `reject` restores strict
-validation. Media, tool callbacks, and other meaning-changing capability gaps
-remain hard failures under every policy.
+validation. Unsupported media, tool callbacks, and other meaning-changing
+capability gaps remain hard failures under every policy.
 
 Provider CLIs currently receive conversation history as a role-tagged text
 rendering when they do not offer a native multi-message input. The structured
@@ -134,6 +137,7 @@ isolated temporary workspace per request.
 
 - Provider API credential variables are removed before subscription CLIs run.
 - Codex threads are ephemeral, read-only, and use approval policy `never`.
+- Codex image files use owner-only permissions and are removed after each turn.
 - Claude tools, MCP configuration, slash commands, and session persistence are
   disabled.
 - Antigravity runs sandboxed in a temporary workspace and is terminated on tool

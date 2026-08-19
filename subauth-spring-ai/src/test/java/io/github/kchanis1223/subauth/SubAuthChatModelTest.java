@@ -6,10 +6,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 
 import io.github.kchanis1223.subauth.runtime.RuntimeAdapter;
+import io.github.kchanis1223.subauth.runtime.RuntimeCapabilities;
+import io.github.kchanis1223.subauth.runtime.RuntimeContent;
 import io.github.kchanis1223.subauth.runtime.RuntimeEvent;
+import io.github.kchanis1223.subauth.runtime.RuntimeOption;
 import io.github.kchanis1223.subauth.runtime.RuntimeProbe;
 import io.github.kchanis1223.subauth.runtime.RuntimeRegistry;
 import io.github.kchanis1223.subauth.runtime.RuntimeRequest;
@@ -146,6 +150,56 @@ class SubAuthChatModelTest {
     }
 
     @Test
+    void mapsPngMediaForAMediaCapableRuntime() {
+        AtomicReference<RuntimeRequest> captured = new AtomicReference<>();
+        RuntimeCapabilities capabilities = new RuntimeCapabilities(
+                true, true, true, true, false, false,
+                Set.of(SubAuthEffort.values()), Set.of(RuntimeOption.MODEL, RuntimeOption.EFFORT));
+        SubAuthChatModel model = model(runtime(
+                captured, SubAuthProvider.OPENAI, "end_turn", capabilities));
+        byte[] png = new byte[] {
+                (byte) 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1
+        };
+        Media media = Media.builder()
+                .mimeType(MimeTypeUtils.IMAGE_PNG)
+                .data(new ByteArrayResource(png))
+                .name("sample.png")
+                .build();
+
+        model.call(new Prompt(List.of(
+                UserMessage.builder().text("describe").media(media).build())));
+
+        assertThat(captured.get()).isNotNull();
+        assertThat(captured.get().messages().getFirst().contents()).hasSize(2);
+        assertThat(captured.get().messages().getFirst().contents().getLast())
+                .isInstanceOfSatisfying(RuntimeContent.Media.class, mapped -> {
+                    assertThat(mapped.mimeType()).isEqualTo("image/png");
+                    assertThat(mapped.data()).containsExactly(png);
+                    assertThat(mapped.name()).isEqualTo("sample.png");
+                });
+    }
+
+    @Test
+    void rejectsImageBytesThatDoNotMatchTheDeclaredMimeType() {
+        AtomicReference<RuntimeRequest> captured = new AtomicReference<>();
+        RuntimeCapabilities capabilities = new RuntimeCapabilities(
+                true, true, true, true, false, false,
+                Set.of(SubAuthEffort.values()), Set.of(RuntimeOption.MODEL, RuntimeOption.EFFORT));
+        SubAuthChatModel model = model(runtime(
+                captured, SubAuthProvider.OPENAI, "end_turn", capabilities));
+        Media media = Media.builder()
+                .mimeType(MimeTypeUtils.IMAGE_PNG)
+                .data(new ByteArrayResource(new byte[] { 1, 2, 3 }))
+                .build();
+
+        assertThatThrownBy(() -> model.call(new Prompt(List.of(
+                UserMessage.builder().text("describe").media(media).build()))))
+                .isInstanceOf(SubAuthException.class)
+                .hasMessageContaining("do not match declared MIME type");
+        assertThat(captured.get()).isNull();
+    }
+
+    @Test
     void doesNotFabricateAMissingFinishReason() {
         SubAuthChatModel model = model(runtime(
                 new AtomicReference<>(), SubAuthProvider.OPENAI, null));
@@ -179,8 +233,19 @@ class SubAuthChatModelTest {
             AtomicReference<RuntimeRequest> captured,
             SubAuthProvider provider,
             String finishReason) {
+        return runtime(
+                captured, provider, finishReason,
+                RuntimeCapabilities.textOnly(Set.of(SubAuthEffort.values())));
+    }
+
+    private RuntimeAdapter runtime(
+            AtomicReference<RuntimeRequest> captured,
+            SubAuthProvider provider,
+            String finishReason,
+            RuntimeCapabilities capabilities) {
         return new RuntimeAdapter() {
             @Override public SubAuthProvider provider() { return provider; }
+            @Override public RuntimeCapabilities capabilities() { return capabilities; }
             @Override public RuntimeProbe probe() {
                 return new RuntimeProbe(provider, true, true, "test", "ready", List.of("runtime-model"), Map.of());
             }

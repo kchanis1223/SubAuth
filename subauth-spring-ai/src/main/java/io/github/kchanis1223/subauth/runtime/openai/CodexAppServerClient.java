@@ -21,7 +21,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.kchanis1223.subauth.SubAuthException;
 
-public final class CodexAppServerClient implements AutoCloseable {
+public final class CodexAppServerClient implements CodexAppServerTransport {
     private final ObjectMapper objectMapper;
     private final List<String> command;
     private final Duration requestTimeout;
@@ -44,11 +44,13 @@ public final class CodexAppServerClient implements AutoCloseable {
         return process != null && process.isAlive();
     }
 
+    @Override
     public JsonNode request(String method, Map<String, ?> params) {
         ensureStarted();
         return requestInternal(method, params);
     }
 
+    @Override
     public Subscription subscribe() {
         ensureStarted();
         BlockingQueue<JsonNode> queue = new LinkedBlockingQueue<>();
@@ -194,7 +196,7 @@ public final class CodexAppServerClient implements AutoCloseable {
         }
     }
 
-    public final class Subscription implements AutoCloseable {
+    public final class Subscription implements CodexAppServerTransport.Subscription {
         private final BlockingQueue<JsonNode> queue;
 
         private Subscription(BlockingQueue<JsonNode> queue) {

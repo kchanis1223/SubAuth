@@ -219,8 +219,9 @@ spring.ai.subauth.probe-timeout=20s
 
 기존 코드의 `temperature`, `maxTokens`, `topP` 같은 생성 옵션은 삭제하지 않아도
 됩니다. 구독 런타임이 적용할 수 없는 옵션은 기본값으로 무시되며 응답 메타데이터의
-`ignoredOptions`에 기록됩니다. 이미지·파일·도구 호출은 요청 의미가 달라질 수 있어
-계속 예외로 처리합니다.
+`ignoredOptions`에 기록됩니다. Codex는 Spring AI `Media`의 PNG·JPEG 이미지 입력을
+지원합니다. 그 밖의 이미지·파일·도구 호출은 요청 의미가 달라질 수 있어 계속
+예외로 처리합니다.
 
 기존 API 키 자리표시자가 값 없이 평가되어 애플리케이션 시작을 막는지 확인합니다.
 운영용 API 설정은 삭제하지 말고 운영 프로필에 유지합니다.
