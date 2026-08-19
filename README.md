@@ -24,7 +24,7 @@ Spring Boot 애플리케이션
 - Java 21 이상
 - Spring Boot 3.5 + Spring AI 1.1
 - Spring Boot 4.1 + Spring AI 2.0
-- SubAuth 저장소와 GitHub Packages에 접근할 수 있는 GitHub 계정
+- GitHub Packages 인증에 사용할 GitHub 계정
 - Codex, Claude Code, Antigravity 중 하나 이상의 로그인된 런타임
 
 현재 배포 버전은 `0.2.0-internal.2`입니다.
@@ -37,30 +37,57 @@ Spring Boot 애플리케이션
 
 기존 `ChatClient` 코드는 바꾸지 않습니다.
 
-## 1. 설치 준비
+## AI로 설치하기
 
-GitHub CLI로 로그인하고 내부 패키지를 읽을 수 있는 권한을 추가합니다.
+Codex, Claude Code, Antigravity 같은 AI 코딩 도구를 사용한다면 긴 설정을 직접
+옮기지 않아도 됩니다. SubAuth를 적용할 Spring AI 프로젝트를 AI 도구로 연 뒤 다음
+문장을 그대로 입력합니다.
 
-```bash
-brew install gh
-gh auth login
-gh auth refresh -h github.com -s read:packages
+```text
+현재 열려 있는 Spring AI 프로젝트에 SubAuth를 적용해 줘.
+먼저 https://raw.githubusercontent.com/kchanis1223/SubAuth/main/AI_SETUP.md 를 읽고
+그 절차를 따라 줘. 기존 코드와 Spring Boot/Spring AI 버전은 유지하고, 계정 로그인이나
+인증 정보 설정처럼 내가 직접 해야 하는 단계에서는 명령을 알려 주고 기다려 줘.
 ```
 
-SubAuth 저장소를 받습니다.
+AI는 프로젝트가 Gradle인지 Maven인지 확인하고 필요한 파일만 수정한 뒤 컴파일까지
+검증합니다. 브라우저 로그인과 계정 선택은 사용자가 직접 수행합니다. 자세한 작업
+절차와 안전 기준은 [AI 설치 진입점](AI_SETUP.md)에 있습니다.
+
+## 1. 설치 준비
+
+SubAuth 저장소는 공개되어 있으므로 HTTPS로 바로 받을 수 있습니다.
 
 ```bash
 git clone https://github.com/kchanis1223/SubAuth.git
 cd SubAuth
 ```
 
-Gradle 프로젝트를 사용한다면 다음 명령을 실행합니다.
+라이브러리는 GitHub Packages에서 내려받으므로 패키지 인증은 별도로 필요합니다.
+GitHub CLI로 로그인하고 패키지 읽기 권한을 추가합니다.
+
+```bash
+brew install gh
+gh auth login -h github.com -p https
+gh auth refresh -h github.com -s read:packages
+```
+
+먼저 적용할 프로젝트의 빌드 도구를 확인합니다.
+
+- 프로젝트 루트에 `build.gradle` 또는 `build.gradle.kts`가 있으면 Gradle 프로젝트입니다.
+- 프로젝트 루트에 `pom.xml`이 있으면 Maven 프로젝트입니다.
+- 아래에서 자신의 빌드 도구에 해당하는 명령 하나만 실행합니다.
+
+Gradle 프로젝트에는 `pom.xml`을 새로 만들거나 수정할 필요가 없습니다.
+
+Gradle 프로젝트(`build.gradle` 또는 `build.gradle.kts`)를 사용한다면 다음 명령을
+실행합니다.
 
 ```bash
 ./scripts/setup-internal.sh --gradle-only --version 0.2.0-internal.2
 ```
 
-Maven 프로젝트를 사용한다면 다음 명령을 실행합니다.
+Maven 프로젝트(`pom.xml`)를 사용한다면 다음 명령을 실행합니다.
 
 ```bash
 ./scripts/setup-internal.sh --maven-only --version 0.2.0-internal.2
@@ -85,7 +112,10 @@ AI 구독 로그인  -> 실제 모델 호출
 
 ## 2. 프로젝트에 SubAuth 추가
 
-### Gradle
+### Gradle 프로젝트
+
+프로젝트 루트에 `build.gradle` 또는 `build.gradle.kts`가 있다면 이 항목만
+따릅니다. `pom.xml`은 만들거나 수정하지 않습니다.
 
 기존 `build.gradle`의 `repositories`에 SubAuth 저장소를 추가합니다.
 
@@ -123,9 +153,13 @@ dependencies {
 }
 ```
 
-### Maven
+### Maven 프로젝트
 
-설정 스크립트를 실행했다면 `pom.xml`에는 Starter만 추가하면 됩니다.
+프로젝트 루트에 기존 `pom.xml`이 있는 경우에만 이 항목을 따릅니다. Gradle
+프로젝트는 이 항목을 건너뜁니다.
+
+설정 스크립트를 실행했다면 기존 `pom.xml`의 `dependencies` 안에 Starter만
+추가하면 됩니다.
 
 ```xml
 <dependency>
@@ -193,16 +227,106 @@ public class AiService {
 
 ## 5. 공급자 로그인과 실행
 
-사용할 공급자의 CLI 로그인을 먼저 완료합니다.
+사용할 공급자 하나만 준비하면 됩니다. SubAuth는 API 키가 아니라 각 CLI에 저장된
+구독 로그인을 사용합니다.
 
-| 공급자 | 로그인 확인 | Gradle 실행 |
-|---|---|---|
-| OpenAI | `codex login status` | `SUBAUTH_PROVIDER=openai ./gradlew bootRun` |
-| Claude | `claude auth status --json` | `SUBAUTH_PROVIDER=claude ./gradlew bootRun` |
-| Gemini | `agy models` | `SUBAUTH_PROVIDER=gemini ./gradlew bootRun` |
+### OpenAI 구독
 
-OpenAI는 Codex CLI에서 `codex login`으로 로그인할 수 있습니다. Claude와 Gemini는
-각 CLI의 일반 로그인 절차를 사용합니다.
+Codex CLI가 설치되어 있는지 확인합니다.
+
+```bash
+codex --version
+```
+
+브라우저에서 ChatGPT 계정으로 로그인한 뒤 상태를 확인합니다.
+
+```bash
+codex login
+codex login status
+```
+
+상태에 ChatGPT 로그인이 표시되어야 합니다. API 키로 로그인되어 있다면 SubAuth가
+의도한 구독 방식이 아니므로 `codex logout` 후 `codex login`을 다시 실행합니다.
+
+```bash
+SUBAUTH_PROVIDER=openai ./gradlew bootRun
+```
+
+### Claude 구독
+
+Claude Code가 설치되어 있는지 확인합니다. Claude Code를 구독으로 사용하려면 Claude
+Pro, Max, Team 또는 Enterprise 계정이 필요합니다.
+
+```bash
+claude --version
+```
+
+Claude.ai 계정으로 로그인한 뒤 상태를 확인합니다.
+
+```bash
+claude auth login
+claude auth status --json
+```
+
+출력에서 `loggedIn`이 `true`이고 구독 로그인이 사용 중인지 확인합니다. Console API
+계정이 아니라 Claude.ai 구독 계정을 선택해야 합니다.
+
+```bash
+SUBAUTH_PROVIDER=claude ./gradlew bootRun
+```
+
+Claude 연결은 개발 및 개발자가 통제하는 시연에만 사용합니다. 정식 운영 전에는
+Anthropic이 지원하는 API 인증으로 전환해야 합니다.
+
+### Gemini 구독
+
+Antigravity CLI가 없다면 macOS에서 다음 공식 설치 명령을 실행합니다.
+
+```bash
+curl -fsSL https://antigravity.google/cli/install.sh | bash
+```
+
+설치 여부를 확인한 뒤 처음 한 번 `agy`를 실행합니다.
+
+```bash
+agy --version
+agy
+```
+
+화면에서 `Google OAuth`를 선택하고 브라우저에서 Google 계정으로 로그인합니다.
+로그인이 끝나면 약관에 동의하고, CLI를 종료한 뒤 사용 가능한 모델을 확인합니다.
+
+```bash
+agy models
+```
+
+`agy models`가 모델 목록을 출력하면 인증이 준비된 것입니다. Antigravity 설정의
+`Use AI Credits`는 꺼진 상태여야 합니다.
+
+```bash
+SUBAUTH_PROVIDER=gemini ./gradlew bootRun
+```
+
+Antigravity 연결은 Google의 허가 없이 외부 사용자나 운영 트래픽에 사용하지
+않습니다.
+
+### 실행 파일을 찾지 못하는 경우
+
+다음 명령으로 사용할 CLI가 현재 터미널의 `PATH`에 있는지 확인합니다.
+
+```bash
+command -v codex
+command -v claude
+command -v agy
+```
+
+CLI를 설치한 뒤에도 Spring Boot에서 `Permission denied` 또는 실행 파일을 찾을 수
+없다는 오류가 나오면 Gradle 데몬을 종료하고 같은 터미널에서 다시 실행합니다.
+
+```bash
+./gradlew --stop
+SUBAUTH_PROVIDER=openai ./gradlew bootRun
+```
 
 Maven 프로젝트는 `./gradlew bootRun` 대신 프로젝트에서 사용하던 Maven 실행 명령을
 사용합니다.
@@ -210,10 +334,6 @@ Maven 프로젝트는 `./gradlew bootRun` 대신 프로젝트에서 사용하던
 ```bash
 SUBAUTH_PROVIDER=openai mvn spring-boot:run
 ```
-
-Claude 구독 연결은 개발 및 개발자가 통제하는 시연에만 사용합니다. 정식 운영
-전에는 Anthropic이 지원하는 API 인증으로 전환해야 합니다. Antigravity 연결은
-Google의 허가 없이 외부 사용자나 운영 트래픽에 사용하지 않습니다.
 
 ## 6. 동작 확인
 
