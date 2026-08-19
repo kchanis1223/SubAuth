@@ -24,7 +24,7 @@ SubAuth never accepts requests directly from external users.
 Unix socket, custom client SDK, or Python runtime.
 
 1. Spring AI builds a `Prompt`, including history supplied by chat memory.
-2. `PromptRuntimeMapper` validates supported options and creates a stateless
+2. `PromptRuntimeMapper` checks runtime capabilities and creates a stateless
    `RuntimeRequest`.
 3. `RuntimeRegistry` selects the configured provider adapter.
 4. The adapter invokes Codex App Server, Claude Code, or Antigravity.
@@ -51,6 +51,14 @@ low through max effort except minimal; Antigravity accepts low, medium, and
 high; Codex accepts the SubAuth effort vocabulary and leaves final
 model/effort compatibility to its runtime.
 
+Portable generation controls such as temperature, top-p, token limits,
+penalties, and stop sequences are a softer compatibility boundary. When the
+selected subscription runtime cannot carry one, the default `ignore` policy
+continues the request and records its Spring AI name in response metadata.
+The `warn` policy also writes a warning, while `reject` restores strict
+validation. Media, tool callbacks, and other meaning-changing capability gaps
+remain hard failures under every policy.
+
 Provider CLIs currently receive conversation history as a role-tagged text
 rendering when they do not offer a native multi-message input. The structured
 roles and metadata remain available to adapters, so a future runtime protocol
@@ -70,7 +78,9 @@ used by official model implementations.
 - assistant-specific observable values become `AssistantMessage` properties;
 - an observed provider stop reason becomes `ChatGenerationMetadata.finishReason`;
 - missing model usage or finish reasons remain missing rather than being
-  fabricated.
+  fabricated;
+- portable options skipped by the selected runtime become
+  `ChatResponseMetadata.ignoredOptions`.
 
 Streaming emits one `ChatResponse` per text delta and a final empty-content
 response carrying completion metadata and usage. Callers consuming

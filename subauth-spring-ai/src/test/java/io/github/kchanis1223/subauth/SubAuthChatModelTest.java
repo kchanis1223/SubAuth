@@ -96,8 +96,32 @@ class SubAuthChatModelTest {
     }
 
     @Test
-    void unsupportedPortableOptionsFailExplicitly() {
-        SubAuthChatModel model = model(runtime(new AtomicReference<>()));
+    void unsupportedPortableOptionsAreIgnoredByDefaultAndReportedInMetadata() {
+        AtomicReference<RuntimeRequest> captured = new AtomicReference<>();
+        SubAuthChatModel model = model(runtime(captured));
+        ChatOptions options = ChatOptions.builder()
+                .temperature(0.3)
+                .maxTokens(128)
+                .topP(0.9)
+                .stopSequences(List.of("STOP"))
+                .build();
+
+        var response = model.call(new Prompt("hello", options));
+
+        assertThat(response.getResult().getOutput().getText()).isEqualTo("SUBAUTH_OK");
+        assertThat(captured.get()).isNotNull();
+        assertThat((Object) response.getMetadata().get("ignoredOptions"))
+                .isEqualTo(List.of("maxTokens", "temperature", "topP", "stopSequences"));
+    }
+
+    @Test
+    void unsupportedPortableOptionsCanStillBeRejected() {
+        RuntimeAdapter runtime = runtime(new AtomicReference<>());
+        SubAuthChatModel model = new SubAuthChatModel(
+                new RuntimeRegistry(List.of(runtime)),
+                SubAuthChatOptions.builder().provider(runtime.provider()).build(),
+                Duration.ofSeconds(2),
+                SubAuthUnsupportedOptionsPolicy.REJECT);
         ChatOptions options = ChatOptions.builder().temperature(0.3).build();
 
         assertThatThrownBy(() -> model.call(new Prompt("hello", options)))

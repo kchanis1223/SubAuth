@@ -69,6 +69,7 @@ public class SubAuthAutoConfiguration {
                 .model(properties.getModel())
                 .effort(properties.getEffort())
                 .build();
-        return new SubAuthChatModel(registry, options, properties.getRequestTimeout());
+        return new SubAuthChatModel(
+                registry, options, properties.getRequestTimeout(), properties.getUnsupportedOptions());
     }
 }

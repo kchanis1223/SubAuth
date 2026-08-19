@@ -190,6 +190,7 @@ spring:
       provider: ${SUBAUTH_PROVIDER:openai}
       model: ${SUBAUTH_MODEL:auto}
       effort: ${SUBAUTH_EFFORT:medium}
+      unsupported-options: ${SUBAUTH_UNSUPPORTED_OPTIONS:ignore}
       request-timeout: 5m
       probe-timeout: 20s
 ```
@@ -382,11 +383,14 @@ SubAuth는 대화 내용을 저장하지 않습니다. 대화 이력은 기존 S
 | 텍스트 메시지 | 이미지, 음성, 파일 입력 |
 | 동기 호출과 스트리밍 | Tool Callback과 MCP |
 | OpenAI, Claude, Gemini 선택 | 공급자 세션 이어쓰기 |
-| 모델과 effort 선택 | temperature, top-p, max-token 등의 생성 옵션 |
+| 모델과 effort 선택 | temperature, top-p, max-token 등의 생성 옵션 적용 |
 | 요청 취소와 제한 시간 | API 키 기반 운영 전송 |
 
-지원하지 않는 옵션은 무시하지 않고 `SubAuthUnsupportedCapabilityException`으로
-알립니다.
+구독 런타임이 적용할 수 없는 생성 옵션은 기본값으로 무시하고 호출을 계속합니다.
+해당 항목은 `ChatResponseMetadata`의 `ignoredOptions`에 기록됩니다. 실행 로그에도
+경고를 남기려면 `unsupported-options: warn`, 예외로 중단하려면
+`unsupported-options: reject`를 사용합니다. 이미지·파일·도구 호출처럼 요청의
+의미가 달라지는 기능은 이 설정과 관계없이 예외로 중단합니다.
 
 ## 문제 해결
 
@@ -411,8 +415,10 @@ agy models
 
 ### `SubAuthUnsupportedCapabilityException`
 
-기존 공급자 설정에서 `temperature`, `max-tokens` 같은 옵션을 제거하고
-`provider`, `model`, `effort`만 사용해 다시 확인합니다.
+이미지·파일·도구 호출 등 현재 지원하지 않는 기능이 요청에 포함되어 있는지
+확인합니다. `unsupported-options: reject`를 사용 중이라면 `temperature`,
+`max-tokens` 같은 생성 옵션도 예외의 원인이 됩니다. 기본값인 `ignore`로 바꾸거나
+해당 옵션을 제거합니다.
 
 ### Maven Central `429 Too Many Requests`
 

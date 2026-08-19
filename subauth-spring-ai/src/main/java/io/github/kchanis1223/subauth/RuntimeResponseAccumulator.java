@@ -39,26 +39,27 @@ final class RuntimeResponseAccumulator {
         }
     }
 
-    ChatResponse completedResponse(RuntimeRequest request) {
+    ChatResponse completedResponse(RuntimeRequest request, List<String> ignoredOptions) {
         if (!completed) {
             throw new SubAuthException(
                     "incomplete_runtime_stream", "The subscription runtime ended without completion");
         }
-        return response(request);
+        return response(request, ignoredOptions);
     }
 
-    static ChatResponse streamingResponse(RuntimeEvent event, RuntimeRequest request) {
+    static ChatResponse streamingResponse(
+            RuntimeEvent event, RuntimeRequest request, List<String> ignoredOptions) {
         RuntimeResponseAccumulator accumulator = new RuntimeResponseAccumulator();
         accumulator.accept(event);
-        return accumulator.response(request);
+        return accumulator.response(request, ignoredOptions);
     }
 
-    private ChatResponse response(RuntimeRequest request) {
+    private ChatResponse response(RuntimeRequest request, List<String> ignoredOptions) {
         if (generations.isEmpty()) generation(0);
         List<Generation> results = generations.entrySet().stream()
                 .map(entry -> generation(request, entry.getKey(), entry.getValue()))
                 .toList();
-        return new ChatResponse(new ArrayList<>(results), responseMetadata(request));
+        return new ChatResponse(new ArrayList<>(results), responseMetadata(request, ignoredOptions));
     }
 
     private Generation generation(RuntimeRequest request, int index, GenerationState state) {
@@ -77,7 +78,8 @@ final class RuntimeResponseAccumulator {
         return new Generation(message, generationMetadata.build());
     }
 
-    private ChatResponseMetadata responseMetadata(RuntimeRequest request) {
+    private ChatResponseMetadata responseMetadata(
+            RuntimeRequest request, List<String> ignoredOptions) {
         var metadata = ChatResponseMetadata.builder()
                 .model(effectiveModel(request))
                 .keyValue("provider", request.provider().name().toLowerCase())
@@ -94,6 +96,7 @@ final class RuntimeResponseAccumulator {
             metadata.keyValue("cacheWriteTokens", usage.cacheWriteTokens());
         }
         responseMetadata.forEach(metadata::keyValue);
+        if (!ignoredOptions.isEmpty()) metadata.keyValue("ignoredOptions", ignoredOptions);
         return metadata.build();
     }
 

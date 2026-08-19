@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.github.kchanis1223.subauth.SubAuthChatModel;
 import io.github.kchanis1223.subauth.SubAuthEffort;
 import io.github.kchanis1223.subauth.SubAuthProvider;
+import io.github.kchanis1223.subauth.SubAuthUnsupportedOptionsPolicy;
 import io.github.kchanis1223.subauth.runtime.RuntimeRegistry;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -38,7 +39,19 @@ class SubAuthAutoConfigurationTest {
                     assertThat(properties.getProvider()).isEqualTo(SubAuthProvider.CLAUDE);
                     assertThat(properties.getModel()).isEqualTo("sonnet");
                     assertThat(properties.getEffort()).isEqualTo(SubAuthEffort.HIGH);
+                    assertThat(properties.getUnsupportedOptions())
+                            .isEqualTo(SubAuthUnsupportedOptionsPolicy.IGNORE);
                 });
+    }
+
+    @Test
+    void bindsUnsupportedOptionsPolicy() {
+        contextRunner
+                .withPropertyValues(
+                        "spring.ai.model.chat=subauth",
+                        "spring.ai.subauth.unsupported-options=reject")
+                .run(context -> assertThat(context.getBean(SubAuthProperties.class)
+                        .getUnsupportedOptions()).isEqualTo(SubAuthUnsupportedOptionsPolicy.REJECT));
     }
 
     @Test

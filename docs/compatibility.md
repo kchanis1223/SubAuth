@@ -41,10 +41,17 @@ AI generation.
 | Tool callbacks | Not yet supported |
 | Media and files | Not yet supported |
 | Structured output | Not yet supported |
-| Temperature, top-p, penalties, stop sequences | Rejected |
+| Temperature, top-p, penalties, token limits, stop sequences | Ignored by default; configurable as warn or reject |
 | Native provider session continuation | Intentionally unsupported |
 
-Unsupported request options raise `SubAuthUnsupportedCapabilityException`.
+Portable generation options that a subscription runtime cannot carry are
+ignored by default so an existing Spring AI service can still be exercised.
+Their Spring AI names are exposed in `ChatResponseMetadata.ignoredOptions`.
+Set `spring.ai.subauth.unsupported-options` to `warn` to also log a warning, or
+to `reject` to raise `SubAuthUnsupportedCapabilityException` as before.
+Capability mismatches that change request meaning, including media, files, and
+tool calls, are always rejected.
+
 SubAuth does not fabricate missing usage or finish-reason data. When a runtime
 does not reveal its effective model, the configured model is used, or `auto`
 is reported when runtime selection was requested.

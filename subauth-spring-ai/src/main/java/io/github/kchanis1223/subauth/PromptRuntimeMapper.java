@@ -1,7 +1,7 @@
 package io.github.kchanis1223.subauth;
 
-import java.util.ArrayList;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Function;
 
@@ -24,10 +24,11 @@ import org.springframework.ai.model.tool.ToolCallingChatOptions;
 final class PromptRuntimeMapper {
     private PromptRuntimeMapper() {}
 
-    static RuntimeRequest map(
+    static MappingResult map(
             Prompt prompt,
             SubAuthChatOptions defaults,
             Duration timeout,
+            SubAuthUnsupportedOptionsPolicy unsupportedOptionsPolicy,
             Function<SubAuthProvider, RuntimeCapabilities> capabilityLookup) {
         ChatOptions requestOptions = prompt.getOptions();
 
@@ -47,7 +48,8 @@ final class PromptRuntimeMapper {
             throw new SubAuthException("provider_required", "spring.ai.subauth.provider is required");
         }
         RuntimeCapabilities capabilities = capabilityLookup.apply(provider);
-        rejectUnsupportedOptions(requestOptions, capabilities);
+        List<String> ignoredOptions = unsupportedOptions(
+                requestOptions, capabilities, unsupportedOptionsPolicy);
 
         List<RuntimeMessage> messages = prompt.getInstructions().stream()
                 .map(message -> mapMessage(message, capabilities))
@@ -55,7 +57,7 @@ final class PromptRuntimeMapper {
         RuntimeRequest request = new RuntimeRequest(
                 provider, messages, normalizeModel(model), effort, timeout);
         capabilities.validate(request);
-        return request;
+        return new MappingResult(request, ignoredOptions);
     }
 
     private static RuntimeMessage mapMessage(Message message, RuntimeCapabilities capabilities) {
@@ -107,28 +109,52 @@ final class PromptRuntimeMapper {
         return model == null || model.isBlank() || "auto".equalsIgnoreCase(model) ? null : model;
     }
 
-    private static void rejectUnsupportedOptions(
-            ChatOptions options, RuntimeCapabilities capabilities) {
-        if (options == null) return;
+    private static List<String> unsupportedOptions(
+            ChatOptions options,
+            RuntimeCapabilities capabilities,
+            SubAuthUnsupportedOptionsPolicy policy) {
+        if (options == null) return List.of();
         if (options instanceof ToolCallingChatOptions toolOptions
                 && toolOptions.getToolCallbacks() != null
                 && !toolOptions.getToolCallbacks().isEmpty()) {
             require(capabilities.supports(RuntimeOption.TOOL_CALLBACKS), "Spring AI tool callbacks");
         }
-        if (options.getFrequencyPenalty() != null) requireOption(capabilities, RuntimeOption.FREQUENCY_PENALTY);
-        if (options.getMaxTokens() != null) requireOption(capabilities, RuntimeOption.MAX_TOKENS);
-        if (options.getPresencePenalty() != null) requireOption(capabilities, RuntimeOption.PRESENCE_PENALTY);
-        if (options.getTemperature() != null) requireOption(capabilities, RuntimeOption.TEMPERATURE);
-        if (options.getTopK() != null) requireOption(capabilities, RuntimeOption.TOP_K);
-        if (options.getTopP() != null) requireOption(capabilities, RuntimeOption.TOP_P);
-        if (options.getStopSequences() != null && !options.getStopSequences().isEmpty()) {
-            requireOption(capabilities, RuntimeOption.STOP_SEQUENCES);
+        List<String> unsupported = new ArrayList<>();
+        if (options.getFrequencyPenalty() != null) {
+            collectUnsupported(capabilities, RuntimeOption.FREQUENCY_PENALTY, "frequencyPenalty", unsupported);
         }
+        if (options.getMaxTokens() != null) {
+            collectUnsupported(capabilities, RuntimeOption.MAX_TOKENS, "maxTokens", unsupported);
+        }
+        if (options.getPresencePenalty() != null) {
+            collectUnsupported(capabilities, RuntimeOption.PRESENCE_PENALTY, "presencePenalty", unsupported);
+        }
+        if (options.getTemperature() != null) {
+            collectUnsupported(capabilities, RuntimeOption.TEMPERATURE, "temperature", unsupported);
+        }
+        if (options.getTopK() != null) {
+            collectUnsupported(capabilities, RuntimeOption.TOP_K, "topK", unsupported);
+        }
+        if (options.getTopP() != null) {
+            collectUnsupported(capabilities, RuntimeOption.TOP_P, "topP", unsupported);
+        }
+        if (options.getStopSequences() != null && !options.getStopSequences().isEmpty()) {
+            collectUnsupported(capabilities, RuntimeOption.STOP_SEQUENCES, "stopSequences", unsupported);
+        }
+        if (policy == SubAuthUnsupportedOptionsPolicy.REJECT && !unsupported.isEmpty()) {
+            throw new SubAuthUnsupportedCapabilityException(
+                    "The selected subscription runtime does not support Spring AI options: "
+                            + String.join(", ", unsupported));
+        }
+        return List.copyOf(unsupported);
     }
 
-    private static void requireOption(
-            RuntimeCapabilities capabilities, RuntimeOption option) {
-        require(capabilities.supports(option), "Spring AI option " + option.name().toLowerCase());
+    private static void collectUnsupported(
+            RuntimeCapabilities capabilities,
+            RuntimeOption option,
+            String optionName,
+            List<String> unsupported) {
+        if (!capabilities.supports(option)) unsupported.add(optionName);
     }
 
     private static void require(boolean supported, String capability) {
@@ -137,4 +163,6 @@ final class PromptRuntimeMapper {
                     "The selected subscription runtime does not support " + capability);
         }
     }
+
+    record MappingResult(RuntimeRequest request, List<String> ignoredOptions) {}
 }
