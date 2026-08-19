@@ -18,7 +18,7 @@ usage() {
   cat <<'EOF'
 Usage: scripts/setup-internal.sh [options]
 
-Configure this Mac to consume SubAuth from the private GitHub Packages registry.
+Configure this Mac to consume SubAuth from GitHub Packages.
 
 Options:
   --yes                  Update settings without an interactive prompt.
@@ -249,7 +249,7 @@ if [[ -n "$package_version" ]]; then
   fi
   echo "[ready] SubAuth package $package_version"
 else
-  echo "Package download was skipped; pass --version after the first internal release."
+  echo "Package download was skipped; pass --version to verify a published release."
 fi
 
-echo "SubAuth internal setup completed."
+echo "SubAuth setup completed."

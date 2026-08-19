@@ -58,7 +58,7 @@ public final class ConfigureMavenSettings {
         Element profile = identifiedChild(document, profiles, "profile", PROFILE_ID);
         Element repositories = child(document, profile, "repositories");
         Element repository = identifiedChild(document, repositories, "repository", SERVER_ID);
-        setText(document, repository, "name", "SubAuth internal GitHub Packages");
+        setText(document, repository, "name", "SubAuth GitHub Packages");
         setText(document, repository, "url", repositoryUrl);
         setText(document, child(document, repository, "releases"), "enabled", "true");
         setText(document, child(document, repository, "snapshots"), "enabled", "true");

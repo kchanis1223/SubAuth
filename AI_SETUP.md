@@ -257,8 +257,9 @@ agy models
 ```
 
 처음 실행할 때 `Google OAuth`를 선택합니다. `agy models`가 모델 목록을 출력해야
-하며 Antigravity의 `Use AI Credits` 설정은 꺼져 있어야 합니다. Google의 허가 없이
-외부 사용자나 운영 트래픽에 사용하지 않도록 알립니다.
+하며 Antigravity의 `Use AI Credits` 설정은 꺼져 있어야 합니다. 제3자를 위한 서비스에
+구독 모델을 사용하는 것은 약관상 권장되지 않으며, 사용 전에 Google의 최신 약관과
+사용 범위를 직접 확인해야 한다고 알립니다.
 
 CLI는 설치되어 있지만 Spring Boot가 찾지 못하면 Gradle 데몬을 종료한 뒤 같은
 터미널에서 다시 실행합니다.

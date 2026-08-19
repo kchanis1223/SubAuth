@@ -1,8 +1,9 @@
-# Internal distribution
+# GitHub Packages distribution
 
-SubAuth is distributed inside the organization through the private GitHub
-Packages Maven registry attached to `kchanis1223/SubAuth`. Internal package
-versions use the form `0.2.0-internal.1`.
+SubAuth is distributed through the public GitHub Packages Maven registry
+attached to `kchanis1223/SubAuth`. Preview package versions currently use the
+form `0.2.0-internal.1`; the `internal` suffix identifies the release channel,
+not repository visibility.
 
 ## Publisher workflow
 
@@ -31,10 +32,11 @@ runtimes logged in:
 SUBAUTH_LIVE_TESTS=true mvn -pl subauth-spring-ai test
 ```
 
-## Internal consumer setup
+## Consumer setup
 
-GitHub Packages requires authentication for private Maven packages. Authenticate
-GitHub CLI and grant its token package-read access:
+GitHub Packages Maven downloads require authentication even when the package and
+repository are public. Authenticate GitHub CLI and grant its token package-read
+access:
 
 ```bash
 gh auth login
@@ -77,9 +79,10 @@ scripts/setup-internal.sh --yes --version 0.2.0-internal.2
 unset SUBAUTH_GITHUB_TOKEN
 ```
 
-The user must already have access to the private `kchanis1223/SubAuth`
-repository. If the organization enforces SSO, authorize the token for that
-organization as well.
+The public `kchanis1223/SubAuth` repository can be cloned without repository
+access. A GitHub account and package-read authentication are still required to
+download Maven packages. If an organization enforces SSO on the selected token,
+authorize the token for that organization as well.
 
 After setup, consumer projects only add the starter dependency; the Maven
 repository comes from the active settings profile:
@@ -92,8 +95,8 @@ repository comes from the active settings profile:
 </dependency>
 ```
 
-Gradle credentials are configured globally, but the private package repository
-must remain explicit in each Gradle build. This avoids injecting a private
+Gradle credentials are configured globally, but the SubAuth package repository
+must remain explicit in each Gradle build. This avoids injecting a project-specific
 repository into every unrelated Gradle project:
 
 ```groovy

@@ -19,9 +19,9 @@ silently consume usage-billed API traffic.
 
 ## Gemini / Antigravity
 
-Google Antigravity terms restrict third-party software access. The Gemini
-adapter is terms-restricted and limited to developer-controlled evaluation.
-It must not be used for production traffic without Google authorization.
+제3자를 위한 서비스에 구독 모델을 사용하는 것은 약관상 권장되지 않습니다.
+Gemini 어댑터를 사용하기 전에 Google Antigravity의 최신 약관과 사용 범위를 직접
+확인해야 합니다.
 
 The adapter removes Gemini API, ADC, Vertex, and Cloud-project variables. It
 also rejects Antigravity configuration that enables purchased AI-credit

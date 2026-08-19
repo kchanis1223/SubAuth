@@ -81,7 +81,7 @@ public final class ConfigureGradleProperties {
             updated.add("");
         }
         if (anyMissing && written.isEmpty()) {
-            updated.add("# SubAuth private GitHub Packages credentials");
+            updated.add("# SubAuth GitHub Packages credentials");
         }
         if (!written.contains(USER_KEY)) {
             updated.add(USER_KEY + "=" + username);

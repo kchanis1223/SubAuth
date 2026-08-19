@@ -30,9 +30,9 @@ import reactor.core.publisher.Flux;
 
 public final class AntigravityRuntimeAdapter implements RuntimeAdapter {
     public static final String POLICY_WARNING =
-            "Google Antigravity terms restrict using third-party software to access the service. " +
-            "Use this runtime only for developer-controlled evaluation and do not route production " +
-            "traffic through it without Google authorization.";
+            "Under the provider terms, using a subscription model for services offered to " +
+            "third parties is not recommended. Review the current Google Antigravity terms " +
+            "before using this runtime.";
 
     private static final Set<String> REMOVED_ENVIRONMENT = Set.of(
             "AGY_ADC_AUTH", "AGY_BUSINESS_PAYGO_TIER", "CLOUDSDK_AUTH_ACCESS_TOKEN",

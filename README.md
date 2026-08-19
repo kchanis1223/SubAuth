@@ -117,6 +117,10 @@ AI 구독 로그인  -> 실제 모델 호출
 프로젝트 루트에 `build.gradle` 또는 `build.gradle.kts`가 있다면 이 항목만
 따릅니다. `pom.xml`은 만들거나 수정하지 않습니다.
 
+Groovy DSL의 `build.gradle`을 사용한다면 아래 예제를 따릅니다.
+`build.gradle.kts`를 사용하는 프로젝트는 문법이 다르므로
+[Gradle Kotlin DSL 예제](AI_SETUP.md#gradle-kotlin)를 바로 확인합니다.
+
 기존 `build.gradle`의 `repositories`에 SubAuth 저장소를 추가합니다.
 
 ```groovy
@@ -307,8 +311,8 @@ agy models
 SUBAUTH_PROVIDER=gemini ./gradlew bootRun
 ```
 
-Antigravity 연결은 Google의 허가 없이 외부 사용자나 운영 트래픽에 사용하지
-않습니다.
+제3자를 위한 서비스에 구독 모델을 사용하는 것은 약관상 권장되지 않습니다.
+Antigravity를 사용하기 전에 Google의 최신 약관과 사용 범위를 직접 확인합니다.
 
 ### 실행 파일을 찾지 못하는 경우
 
@@ -422,11 +426,11 @@ Maven Central의 임시 요청 제한입니다. `--refresh-dependencies`를 반�
 SERVER_PORT=8081 SUBAUTH_PROVIDER=openai ./gradlew bootRun
 ```
 
-## 내부 문서
+## 관련 문서
 
 구조와 정책의 자세한 내용은 다음 문서에서 확인할 수 있습니다.
 
 - [아키텍처](docs/architecture.md)
 - [Spring AI 호환성](docs/compatibility.md)
 - [공급자 정책](docs/runtime-policies.md)
-- [내부 배포](docs/internal-distribution.md)
+- [GitHub Packages 배포](docs/internal-distribution.md)
