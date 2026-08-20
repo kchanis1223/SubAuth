@@ -27,7 +27,7 @@ Spring Boot 애플리케이션
 - GitHub Packages 인증에 사용할 GitHub 계정
 - Codex, Claude Code, Antigravity 중 하나 이상의 로그인된 런타임
 
-현재 배포 버전은 `0.2.0-internal.3`입니다.
+현재 배포 버전은 `0.2.0-internal.4`입니다.
 
 적용할 때 바꾸는 것은 세 가지입니다.
 
@@ -84,13 +84,13 @@ Gradle 프로젝트(`build.gradle` 또는 `build.gradle.kts`)를 사용한다면
 실행합니다.
 
 ```bash
-./scripts/setup-internal.sh --gradle-only --version 0.2.0-internal.3
+./scripts/setup-internal.sh --gradle-only --version 0.2.0-internal.4
 ```
 
 Maven 프로젝트(`pom.xml`)를 사용한다면 다음 명령을 실행합니다.
 
 ```bash
-./scripts/setup-internal.sh --maven-only --version 0.2.0-internal.3
+./scripts/setup-internal.sh --maven-only --version 0.2.0-internal.4
 ```
 
 이 스크립트는 다음 항목을 확인하고 설정합니다.
@@ -153,7 +153,7 @@ repositories {
 
 ```groovy
 dependencies {
-    implementation 'io.github.kchanis1223:subauth-spring-boot-starter:0.2.0-internal.3'
+    implementation 'io.github.kchanis1223:subauth-spring-boot-starter:0.2.0-internal.4'
 }
 ```
 
@@ -169,7 +169,7 @@ dependencies {
 <dependency>
     <groupId>io.github.kchanis1223</groupId>
     <artifactId>subauth-spring-boot-starter</artifactId>
-    <version>0.2.0-internal.3</version>
+    <version>0.2.0-internal.4</version>
 </dependency>
 ```
 
@@ -284,6 +284,42 @@ public String describeImage(Path imagePath) {
 지원합니다. PNG와 JPEG의 실제 파일 형식도 확인합니다. 이미지는 Codex가 읽을 수
 있는 권한 제한 임시 파일로 만든 뒤 요청이 끝나거나 취소되면 삭제합니다. Claude와
 Gemini의 이미지 입력은 아직 지원하지 않습니다.
+
+### Codex에서 Spring AI 도구 사용하기
+
+OpenAI 구독을 선택하면 Spring AI의 `@Tool`을 기존 `ChatClient` 방식으로 사용할 수
+있습니다. 아래 도구는 실제 서비스 안에서 실행되며, 실행 결과만 SubAuth를 거쳐
+Codex에 전달됩니다.
+
+```java
+import org.springframework.ai.tool.annotation.Tool;
+import org.springframework.stereotype.Component;
+
+@Component
+public class LocalTools {
+    @Tool(description = "현재 서비스의 테스트 상태를 확인한다")
+    public String readTestStatus() {
+        return "READY";
+    }
+}
+```
+
+```java
+public String check(LocalTools tools) {
+    return chat.prompt()
+            .user("도구로 테스트 상태를 확인해서 알려 주세요.")
+            .tools(tools)
+            .call()
+            .content();
+}
+```
+
+Codex가 도구 호출을 요청하면 SubAuth가 이름과 JSON 인자를 확인하고 해당
+`ToolCallback`을 실행합니다. 결과는 같은 Codex 요청에 돌아가며, Codex가 이를 바탕으로
+최종 답변을 만듭니다. 한 요청에서 최대 8회까지 호출할 수 있고 전체 요청 제한 시간이
+그대로 적용됩니다. 처음에는 조회처럼 부작용이 없는 도구로 테스트하고, 파일 변경이나
+외부 전송을 수행하는 도구는 동작을 충분히 확인한 뒤 등록하세요. 현재 이 기능은
+Codex에서만 지원하며 Claude와 Gemini는 추가 구현 중입니다.
 
 ## 5. 공급자 로그인과 실행
 
@@ -437,7 +473,8 @@ SubAuth는 대화 내용을 저장하지 않습니다. 대화 이력은 기존 S
 |---|---|
 | 텍스트 메시지 | Claude·Gemini 이미지 입력 |
 | Codex PNG·JPEG 이미지 입력 | 음성, 일반 파일 입력 |
-| 동기 호출과 스트리밍 | Tool Callback과 MCP |
+| 동기 호출과 스트리밍 | Claude·Gemini Tool Callback, MCP |
+| Codex Spring AI Tool Callback | 구조화 출력 |
 | OpenAI, Claude, Gemini 선택 | 공급자 세션 이어쓰기 |
 | 모델과 effort 선택 | temperature, top-p, max-token 등의 생성 옵션 적용 |
 | 요청 취소와 제한 시간 | API 키 기반 운영 전송 |
@@ -455,7 +492,7 @@ SubAuth는 대화 내용을 저장하지 않습니다. 대화 이력은 기존 S
 
 ```bash
 gh auth refresh -h github.com -s read:packages
-./scripts/setup-internal.sh --gradle-only --version 0.2.0-internal.3
+./scripts/setup-internal.sh --gradle-only --version 0.2.0-internal.4
 ```
 
 Gradle을 사용한다면 `build.gradle`에 SubAuth 저장소가 있는지도 확인합니다.

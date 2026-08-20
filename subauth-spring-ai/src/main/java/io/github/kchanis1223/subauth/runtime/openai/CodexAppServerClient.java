@@ -51,6 +51,16 @@ public final class CodexAppServerClient implements CodexAppServerTransport {
     }
 
     @Override
+    public void respond(JsonNode id, Map<String, ?> result) {
+        ensureStarted();
+        if (id == null || (!id.isNumber() && !id.isTextual())) {
+            throw new SubAuthException(
+                    "runtime_protocol_error", "Codex App Server request id is invalid");
+        }
+        write(Map.of("id", id, "result", result));
+    }
+
+    @Override
     public Subscription subscribe() {
         ensureStarted();
         BlockingQueue<JsonNode> queue = new LinkedBlockingQueue<>();
@@ -72,7 +82,7 @@ public final class CodexAppServerClient implements CodexAppServerTransport {
                 requestInternal("initialize", Map.of(
                         "clientInfo", Map.of(
                                 "name", "subauth", "title", "SubAuth", "version", "0.2.0"),
-                        "capabilities", Map.of("experimentalApi", false)));
+                        "capabilities", Map.of("experimentalApi", true)));
                 notifyInternal("initialized", Map.of());
             }
             catch (IOException error) {
@@ -145,12 +155,12 @@ public final class CodexAppServerClient implements CodexAppServerTransport {
             while ((line = reader.readLine()) != null) {
                 JsonNode message = objectMapper.readTree(line);
                 JsonNode idNode = message.get("id");
-                if (idNode != null && idNode.canConvertToLong()) {
+                if (message.path("method").isTextual()) {
+                    subscribers.forEach(queue -> queue.offer(message));
+                }
+                else if (idNode != null && idNode.canConvertToLong()) {
                     CompletableFuture<JsonNode> future = pending.get(idNode.longValue());
                     if (future != null) future.complete(message);
-                }
-                else if (message.path("method").isTextual()) {
-                    subscribers.forEach(queue -> queue.offer(message));
                 }
             }
             failPending(new SubAuthException("runtime_unavailable", "Codex App Server stopped"));

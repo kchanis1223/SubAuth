@@ -38,7 +38,8 @@ AI generation.
 | Provider/model/effort selection | Supported |
 | Coexistence with other `ChatModel` beans | Supported |
 | Configuration-only official-provider switch | Supported |
-| Tool callbacks | Not yet supported |
+| Spring AI tool callbacks through Codex | Supported; request-scoped execution |
+| Claude/Gemini tool callbacks | Not yet supported |
 | PNG/JPEG `Media` input through Codex | Supported |
 | Claude/Gemini media, audio, and general files | Not yet supported |
 | Structured output | Not yet supported |
@@ -52,7 +53,10 @@ Set `spring.ai.subauth.unsupported-options` to `warn` to also log a warning, or
 to `reject` to raise `SubAuthUnsupportedCapabilityException` as before.
 Capability mismatches that change request meaning, including unsupported media,
 files, and tool calls, are always rejected. Codex image input accepts at most
-four PNG/JPEG images per request, 10 MiB per image and 20 MiB total.
+four PNG/JPEG images per request, 10 MiB per image and 20 MiB total. Codex tool
+callbacks use App Server dynamic tools, share the request timeout, and are
+limited to eight calls per request. Provider-native assistant tool-call and
+tool-result history is not yet accepted.
 
 SubAuth does not fabricate missing usage or finish-reason data. When a runtime
 does not reveal its effective model, the configured model is used, or `auto`

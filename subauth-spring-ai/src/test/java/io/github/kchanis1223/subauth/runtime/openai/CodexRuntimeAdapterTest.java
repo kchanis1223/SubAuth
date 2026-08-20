@@ -13,6 +13,7 @@ import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -25,6 +26,7 @@ import io.github.kchanis1223.subauth.runtime.RuntimeEvent;
 import io.github.kchanis1223.subauth.runtime.RuntimeMessage;
 import io.github.kchanis1223.subauth.runtime.RuntimeRequest;
 import io.github.kchanis1223.subauth.runtime.RuntimeRole;
+import io.github.kchanis1223.subauth.runtime.RuntimeTool;
 import org.junit.jupiter.api.Test;
 
 class CodexRuntimeAdapterTest {
@@ -73,6 +75,54 @@ class CodexRuntimeAdapterTest {
                 .hasMessageContaining("does not support image input");
         assertThat(transport.threadStarted).isFalse();
         assertThat(transport.imagePath).isNull();
+    }
+
+    @Test
+    void executesCodexDynamicToolCallsAndReturnsTheResultToTheSameTurn() {
+        ToolFakeTransport transport = new ToolFakeTransport();
+        CodexRuntimeAdapter adapter = new CodexRuntimeAdapter(new ObjectMapper(), transport);
+        AtomicReference<String> arguments = new AtomicReference<>();
+        RuntimeTool tool = new RuntimeTool(
+                "current_weather",
+                "Read the current weather",
+                """
+                        {"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}
+                        """,
+                value -> {
+                    arguments.set(value);
+                    return "21 C";
+                });
+        RuntimeRequest request = new RuntimeRequest(
+                SubAuthProvider.OPENAI,
+                List.of(new RuntimeMessage(
+                        RuntimeRole.USER,
+                        List.of(new RuntimeContent.Text("Weather in Seoul?")),
+                        Map.of())),
+                "tool-model",
+                SubAuthEffort.MEDIUM,
+                Duration.ofSeconds(1),
+                List.of(tool));
+
+        List<RuntimeEvent> events = adapter.stream(request)
+                .collectList()
+                .block(Duration.ofSeconds(2));
+
+        assertThat(events).isNotNull();
+        assertThat(events).extracting(RuntimeEvent::type).containsExactly(
+                RuntimeEvent.Type.STARTED,
+                RuntimeEvent.Type.TEXT_DELTA,
+                RuntimeEvent.Type.COMPLETED);
+        assertThat(events.get(1).text()).isEqualTo("It is 21 C.");
+        assertThat(arguments.get()).isEqualTo("{\"city\":\"Seoul\"}");
+        assertThat(transport.dynamicTools).singleElement().satisfies(value -> {
+            assertThat(value).containsEntry("type", "function");
+            assertThat(value).containsEntry("name", "current_weather");
+            assertThat(((JsonNode) value.get("inputSchema")).path("type").asText())
+                    .isEqualTo("object");
+        });
+        assertThat(transport.responseId.asLong()).isEqualTo(77L);
+        assertThat(transport.toolResponse.get("success")).isEqualTo(true);
+        assertThat(transport.toolResponse.get("contentItems").toString()).contains("21 C");
     }
 
     private static RuntimeRequest imageRequest(String model) {
@@ -139,6 +189,11 @@ class CodexRuntimeAdapterTest {
         }
 
         @Override
+        public void respond(JsonNode id, Map<String, ?> result) {
+            throw new AssertionError("Unexpected server request response");
+        }
+
+        @Override
         public Subscription subscribe() {
             return new Subscription() {
                 @Override
@@ -177,6 +232,87 @@ class CodexRuntimeAdapterTest {
             model.put("isDefault", true);
             model.put("inputModalities", imageModel ? List.of("text", "image") : List.of("text"));
             return objectMapper.valueToTree(Map.of("data", List.of(model)));
+        }
+
+        private JsonNode json(String value) {
+            try {
+                return objectMapper.readTree(value);
+            }
+            catch (JsonProcessingException error) {
+                throw new AssertionError(error);
+            }
+        }
+
+        @Override
+        public void close() {}
+    }
+
+    private static final class ToolFakeTransport implements CodexAppServerTransport {
+        private final ObjectMapper objectMapper = new ObjectMapper();
+        private final Deque<JsonNode> notifications = new ArrayDeque<>();
+        private List<Map<String, Object>> dynamicTools = List.of();
+        private JsonNode responseId;
+        private Map<String, ?> toolResponse = Map.of();
+
+        private ToolFakeTransport() {
+            notifications.add(json("""
+                    {"id":77,"method":"item/tool/call","params":{
+                      "threadId":"thread-1","turnId":"turn-1","callId":"call-1",
+                      "tool":"current_weather","arguments":{"city":"Seoul"}}}
+                    """));
+            notifications.add(json("""
+                    {"method":"item/agentMessage/delta","params":{
+                      "threadId":"thread-1","turnId":"turn-1","delta":"It is 21 C."}}
+                    """));
+            notifications.add(json("""
+                    {"method":"turn/completed","params":{
+                      "threadId":"thread-1","turnId":"turn-1",
+                      "turn":{"id":"turn-1","status":"completed"}}}
+                    """));
+        }
+
+        @Override
+        @SuppressWarnings("unchecked")
+        public JsonNode request(String method, Map<String, ?> params) {
+            return switch (method) {
+                case "account/read" -> json("""
+                        {"account":{"type":"chatgpt","planType":"plus"}}
+                        """);
+                case "model/list" -> objectMapper.valueToTree(Map.of(
+                        "data", List.of(Map.of(
+                                "id", "tool-model",
+                                "isDefault", true,
+                                "inputModalities", List.of("text")))));
+                case "thread/start" -> {
+                    dynamicTools = new ArrayList<>((List<Map<String, Object>>) params.get("dynamicTools"));
+                    yield json("""
+                            {"thread":{"id":"thread-1"},"model":"tool-model"}
+                            """);
+                }
+                case "turn/start" -> json("""
+                        {"turn":{"id":"turn-1"}}
+                        """);
+                default -> throw new AssertionError("Unexpected method: " + method);
+            };
+        }
+
+        @Override
+        public void respond(JsonNode id, Map<String, ?> result) {
+            responseId = id;
+            toolResponse = result;
+        }
+
+        @Override
+        public Subscription subscribe() {
+            return new Subscription() {
+                @Override
+                public JsonNode poll(Duration timeout) {
+                    return notifications.pollFirst();
+                }
+
+                @Override
+                public void close() {}
+            };
         }
 
         private JsonNode json(String value) {

@@ -49,8 +49,15 @@ to Codex App Server as a `localImage` input item in its original content order.
 The temporary workspace is deleted after completion, cancellation, timeout, or
 failure. The adapter also rejects an image request when the selected Codex model
 advertises no image input modality. Claude Code and Antigravity remain text-only.
-Structured tool values stay in the internal model but are rejected before a CLI
-process starts. Claude accepts low through max effort except minimal;
+
+Spring AI tool callbacks are normalized into request-scoped `RuntimeTool`
+values. The Codex adapter publishes their names, descriptions, and JSON input
+schemas as App Server dynamic tools. When Codex sends an `item/tool/call`
+server request, SubAuth executes the matching Spring `ToolCallback` in the host
+application and returns its text result to the same Codex turn. Execution is
+bounded by the request deadline and an eight-call limit. Provider-native tool
+call/result history remains unsupported, and Claude/Gemini tool callbacks are
+still rejected before their processes start. Claude accepts low through max effort except minimal;
 Antigravity accepts low, medium, and high; Codex accepts the SubAuth effort
 vocabulary and leaves final model/effort compatibility to its runtime.
 
@@ -137,6 +144,9 @@ isolated temporary workspace per request.
 
 - Provider API credential variables are removed before subscription CLIs run.
 - Codex threads are ephemeral, read-only, and use approval policy `never`.
+- Only Spring AI tool callbacks explicitly supplied by the application are
+  exposed as Codex dynamic tools; callback code runs with the application's own
+  permissions.
 - Codex image files use owner-only permissions and are removed after each turn.
 - Claude tools, MCP configuration, slash commands, and session persistence are
   disabled.

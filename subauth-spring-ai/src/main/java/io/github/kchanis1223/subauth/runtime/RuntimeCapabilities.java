@@ -38,6 +38,9 @@ public record RuntimeCapabilities(
                 && (!supports(RuntimeOption.EFFORT) || !efforts.contains(request.effort()))) {
             unsupported("effort=" + request.effort().cliValue());
         }
+        if (!request.tools().isEmpty() && !supports(RuntimeOption.TOOL_CALLBACKS)) {
+            unsupported("Spring AI tool callbacks");
+        }
         for (RuntimeMessage message : request.messages()) {
             if (message.role() == RuntimeRole.SYSTEM && !systemMessages) unsupported("system messages");
             if (message.role() == RuntimeRole.ASSISTANT && !assistantMessages) unsupported("assistant messages");

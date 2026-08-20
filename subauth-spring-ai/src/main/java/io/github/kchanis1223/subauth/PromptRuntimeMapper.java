@@ -2,8 +2,10 @@ package io.github.kchanis1223.subauth;
 
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 
@@ -13,12 +15,14 @@ import io.github.kchanis1223.subauth.runtime.RuntimeMessage;
 import io.github.kchanis1223.subauth.runtime.RuntimeOption;
 import io.github.kchanis1223.subauth.runtime.RuntimeRequest;
 import io.github.kchanis1223.subauth.runtime.RuntimeRole;
+import io.github.kchanis1223.subauth.runtime.RuntimeTool;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.MessageType;
 import org.springframework.ai.chat.messages.ToolResponseMessage;
 import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.chat.model.ToolContext;
 import org.springframework.ai.content.Media;
 import org.springframework.ai.content.MediaContent;
 import org.springframework.ai.model.tool.ToolCallingChatOptions;
@@ -62,8 +66,9 @@ final class PromptRuntimeMapper {
         List<RuntimeMessage> messages = prompt.getInstructions().stream()
                 .map(message -> mapMessage(message, capabilities, mediaBudget))
                 .toList();
+        List<RuntimeTool> tools = mapTools(requestOptions);
         RuntimeRequest request = new RuntimeRequest(
-                provider, messages, normalizeModel(model), effort, timeout);
+                provider, messages, normalizeModel(model), effort, timeout, tools);
         capabilities.validate(request);
         return new MappingResult(request, ignoredOptions);
     }
@@ -152,6 +157,31 @@ final class PromptRuntimeMapper {
                             + String.join(", ", unsupported));
         }
         return List.copyOf(unsupported);
+    }
+
+    private static List<RuntimeTool> mapTools(ChatOptions options) {
+        if (!(options instanceof ToolCallingChatOptions toolOptions)
+                || toolOptions.getToolCallbacks() == null
+                || toolOptions.getToolCallbacks().isEmpty()) {
+            return List.of();
+        }
+        Map<String, Object> context = toolOptions.getToolContext() == null
+                ? Map.of()
+                : Map.copyOf(toolOptions.getToolContext());
+        Map<String, RuntimeTool> tools = new LinkedHashMap<>();
+        toolOptions.getToolCallbacks().forEach(callback -> {
+            var definition = callback.getToolDefinition();
+            RuntimeTool tool = new RuntimeTool(
+                    definition.name(),
+                    definition.description(),
+                    definition.inputSchema(),
+                    arguments -> callback.call(arguments, new ToolContext(context)));
+            if (tools.putIfAbsent(tool.name(), tool) != null) {
+                throw new SubAuthException(
+                        "duplicate_tool_name", "Duplicate Spring AI tool name: " + tool.name());
+            }
+        });
+        return List.copyOf(tools.values());
     }
 
     private static void collectUnsupported(

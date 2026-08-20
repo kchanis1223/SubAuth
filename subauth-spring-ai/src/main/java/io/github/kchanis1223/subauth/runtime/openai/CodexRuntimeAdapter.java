@@ -9,6 +9,11 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -25,10 +30,13 @@ import io.github.kchanis1223.subauth.runtime.RuntimeEvent;
 import io.github.kchanis1223.subauth.runtime.RuntimeOption;
 import io.github.kchanis1223.subauth.runtime.RuntimeProbe;
 import io.github.kchanis1223.subauth.runtime.RuntimeRequest;
+import io.github.kchanis1223.subauth.runtime.RuntimeTool;
 import io.github.kchanis1223.subauth.runtime.RuntimeUsage;
 import reactor.core.publisher.Flux;
 
 public final class CodexRuntimeAdapter implements RuntimeAdapter {
+    private static final int MAX_TOOL_CALLS = 8;
+
     private final ObjectMapper objectMapper;
     private final CodexAppServerTransport client;
 
@@ -47,7 +55,8 @@ public final class CodexRuntimeAdapter implements RuntimeAdapter {
     public RuntimeCapabilities capabilities() {
         return new RuntimeCapabilities(
                 true, true, true, true, false, false,
-                Set.of(SubAuthEffort.values()), Set.of(RuntimeOption.MODEL, RuntimeOption.EFFORT));
+                Set.of(SubAuthEffort.values()),
+                Set.of(RuntimeOption.MODEL, RuntimeOption.EFFORT, RuntimeOption.TOOL_CALLBACKS));
     }
 
     @Override
@@ -95,6 +104,9 @@ public final class CodexRuntimeAdapter implements RuntimeAdapter {
                 if (request.effort() != null) threadParams.put("reasoningEffort", request.effort().cliValue());
                 String system = ConversationRenderer.system(request);
                 if (!system.isBlank()) threadParams.put("baseInstructions", system);
+                if (!request.tools().isEmpty()) {
+                    threadParams.put("dynamicTools", dynamicTools(request.tools()));
+                }
 
                 try (CodexTurnInput turnInput = validatedTurnInput(request, status)) {
                     JsonNode threadResult = client.request("thread/start", threadParams);
@@ -115,6 +127,8 @@ public final class CodexRuntimeAdapter implements RuntimeAdapter {
                                 "runtime_protocol_error", "Codex App Server did not return a turn id");
                         turnIdRef.set(turnId);
                         Instant deadline = Instant.now().plus(request.timeout());
+                        Map<String, RuntimeTool> tools = toolsByName(request.tools());
+                        AtomicInteger toolCallCount = new AtomicInteger();
                         while (!sink.isCancelled() && Instant.now().isBefore(deadline)) {
                             JsonNode notification = subscription.poll(Duration.ofMillis(500));
                             if (notification == null) continue;
@@ -127,6 +141,19 @@ public final class CodexRuntimeAdapter implements RuntimeAdapter {
                                 String delta = params.path("delta").asText();
                                 if (!delta.isEmpty()) sink.next(RuntimeEvent.delta(
                                         delta, metadata(model, threadId, turnId, turnInput.mediaCount())));
+                            }
+                            else if ("item/tool/call".equals(method)) {
+                                int callNumber = toolCallCount.incrementAndGet();
+                                if (callNumber > MAX_TOOL_CALLS) {
+                                    client.respond(notification.get("id"), toolResponse(
+                                            false, "SubAuth tool-call limit exceeded"));
+                                    throw new SubAuthException(
+                                            "tool_call_limit_exceeded",
+                                            "Codex requested more than " + MAX_TOOL_CALLS + " tool calls");
+                                }
+                                client.respond(
+                                        notification.get("id"),
+                                        executeToolCall(params, tools, deadline));
                             }
                             else if ("error".equals(method) && !params.path("willRetry").asBoolean(false)) {
                                 throw new SubAuthException("codex_runtime_error", "Codex App Server returned an error");
@@ -174,6 +201,92 @@ public final class CodexRuntimeAdapter implements RuntimeAdapter {
                 worker.interrupt();
             });
         });
+    }
+
+    private List<Map<String, Object>> dynamicTools(List<RuntimeTool> tools) {
+        return tools.stream().map(tool -> {
+            JsonNode schema;
+            try {
+                schema = objectMapper.readTree(tool.inputSchema());
+            }
+            catch (Exception error) {
+                throw new SubAuthException(
+                        "invalid_tool_schema",
+                        "Spring AI tool has invalid JSON Schema: " + tool.name(),
+                        error);
+            }
+            if (schema == null || !schema.isObject()) {
+                throw new SubAuthException(
+                        "invalid_tool_schema",
+                        "Spring AI tool input schema must be a JSON object: " + tool.name());
+            }
+            Map<String, Object> value = new LinkedHashMap<>();
+            value.put("type", "function");
+            value.put("name", tool.name());
+            value.put("description", tool.description());
+            value.put("inputSchema", schema);
+            return value;
+        }).toList();
+    }
+
+    private Map<String, RuntimeTool> toolsByName(List<RuntimeTool> tools) {
+        Map<String, RuntimeTool> values = new LinkedHashMap<>();
+        tools.forEach(tool -> values.put(tool.name(), tool));
+        return Map.copyOf(values);
+    }
+
+    private Map<String, Object> executeToolCall(
+            JsonNode params,
+            Map<String, RuntimeTool> tools,
+            Instant deadline) throws InterruptedException {
+        String toolName = params.path("tool").asText();
+        RuntimeTool tool = tools.get(toolName);
+        if (tool == null) {
+            return toolResponse(false, "Unknown tool: " + toolName);
+        }
+        JsonNode argumentsNode = params.get("arguments");
+        String arguments;
+        try {
+            arguments = argumentsNode == null
+                    ? "{}"
+                    : objectMapper.writeValueAsString(argumentsNode);
+        }
+        catch (Exception error) {
+            return toolResponse(false, "Tool arguments are not valid JSON");
+        }
+
+        Duration remaining = Duration.between(Instant.now(), deadline);
+        if (remaining.isNegative() || remaining.isZero()) {
+            return toolResponse(false, "SubAuth request timed out before tool execution");
+        }
+        FutureTask<String> execution = new FutureTask<>(() -> tool.execute(arguments));
+        Thread executionThread = Thread.ofVirtual()
+                .name("subauth-tool-" + tool.name())
+                .start(execution);
+        try {
+            String output = execution.get(
+                    Math.max(1L, remaining.toMillis()), TimeUnit.MILLISECONDS);
+            return toolResponse(true, output == null ? "" : output);
+        }
+        catch (TimeoutException error) {
+            executionThread.interrupt();
+            return toolResponse(false, "Tool execution timed out: " + tool.name());
+        }
+        catch (ExecutionException error) {
+            Throwable cause = error.getCause();
+            String detail = cause == null || cause.getMessage() == null
+                    ? cause == null ? "unknown error" : cause.getClass().getSimpleName()
+                    : cause.getMessage();
+            return toolResponse(false, "Tool execution failed: " + detail);
+        }
+    }
+
+    private static Map<String, Object> toolResponse(boolean success, String text) {
+        return Map.of(
+                "success", success,
+                "contentItems", List.of(Map.of(
+                        "type", "inputText",
+                        "text", text)));
     }
 
     @SuppressWarnings("unchecked")

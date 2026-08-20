@@ -46,7 +46,7 @@ gh auth refresh -h github.com -s read:packages
 Run the setup from a SubAuth checkout:
 
 ```bash
-scripts/setup-internal.sh --version 0.2.0-internal.3
+scripts/setup-internal.sh --version 0.2.0-internal.4
 ```
 
 The setup checks macOS, Java, GitHub authentication, and the three provider
@@ -75,7 +75,7 @@ putting it on the command line:
 
 ```bash
 export SUBAUTH_GITHUB_TOKEN="..."
-scripts/setup-internal.sh --yes --version 0.2.0-internal.3
+scripts/setup-internal.sh --yes --version 0.2.0-internal.4
 unset SUBAUTH_GITHUB_TOKEN
 ```
 
@@ -91,7 +91,7 @@ repository comes from the active settings profile:
 <dependency>
     <groupId>io.github.kchanis1223</groupId>
     <artifactId>subauth-spring-boot-starter</artifactId>
-    <version>0.2.0-internal.3</version>
+    <version>0.2.0-internal.4</version>
 </dependency>
 ```
 
@@ -114,7 +114,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'io.github.kchanis1223:subauth-spring-boot-starter:0.2.0-internal.3'
+    implementation 'io.github.kchanis1223:subauth-spring-boot-starter:0.2.0-internal.4'
 }
 ```
 

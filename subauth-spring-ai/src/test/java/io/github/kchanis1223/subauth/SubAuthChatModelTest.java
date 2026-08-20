@@ -25,6 +25,9 @@ import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.content.Media;
+import org.springframework.ai.model.tool.ToolCallingChatOptions;
+import org.springframework.ai.tool.ToolCallback;
+import org.springframework.ai.tool.definition.ToolDefinition;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.util.MimeTypeUtils;
 import reactor.core.publisher.Flux;
@@ -207,6 +210,57 @@ class SubAuthChatModelTest {
         var response = model.call(new Prompt("hello"));
 
         assertThat(response.getResult().getMetadata().getFinishReason()).isNull();
+    }
+
+    @Test
+    void mapsSpringAiToolCallbacksAndToolContextToRuntimeTools() {
+        AtomicReference<RuntimeRequest> captured = new AtomicReference<>();
+        AtomicReference<Map<String, Object>> capturedContext = new AtomicReference<>();
+        RuntimeCapabilities capabilities = new RuntimeCapabilities(
+                true, true, true, false, false, false,
+                Set.of(SubAuthEffort.values()),
+                Set.of(RuntimeOption.MODEL, RuntimeOption.EFFORT, RuntimeOption.TOOL_CALLBACKS));
+        SubAuthChatModel model = model(runtime(
+                captured, SubAuthProvider.OPENAI, "end_turn", capabilities));
+        ToolCallback callback = new ToolCallback() {
+            @Override
+            public ToolDefinition getToolDefinition() {
+                return ToolDefinition.builder()
+                        .name("current_weather")
+                        .description("Read the current weather")
+                        .inputSchema("""
+                                {"type":"object","properties":{"city":{"type":"string"}}}
+                                """)
+                        .build();
+            }
+
+            @Override
+            public String call(String arguments) {
+                return "unused";
+            }
+
+            @Override
+            public String call(
+                    String arguments,
+                    org.springframework.ai.chat.model.ToolContext toolContext) {
+                capturedContext.set(toolContext.getContext());
+                return "weather:" + arguments;
+            }
+        };
+        ChatOptions options = ToolCallingChatOptions.builder()
+                .toolCallbacks(callback)
+                .toolContext("tenant", "sample")
+                .build();
+
+        model.call(new Prompt("What is the weather?", options));
+
+        assertThat(captured.get().tools()).singleElement().satisfies(tool -> {
+            assertThat(tool.name()).isEqualTo("current_weather");
+            assertThat(tool.description()).isEqualTo("Read the current weather");
+            assertThat(tool.execute("{\"city\":\"Seoul\"}"))
+                    .isEqualTo("weather:{\"city\":\"Seoul\"}");
+        });
+        assertThat(capturedContext.get()).containsEntry("tenant", "sample");
     }
 
     private SubAuthChatModel model(RuntimeAdapter runtime) {

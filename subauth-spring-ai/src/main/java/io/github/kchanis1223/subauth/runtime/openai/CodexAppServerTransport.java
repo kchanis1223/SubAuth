@@ -8,6 +8,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 interface CodexAppServerTransport extends AutoCloseable {
     JsonNode request(String method, Map<String, ?> params);
 
+    void respond(JsonNode id, Map<String, ?> result);
+
     Subscription subscribe();
 
     @Override

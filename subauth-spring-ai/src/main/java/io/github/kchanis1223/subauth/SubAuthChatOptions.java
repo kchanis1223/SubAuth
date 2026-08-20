@@ -1,10 +1,16 @@
 package io.github.kchanis1223.subauth;
 
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import org.springframework.ai.chat.prompt.ChatOptions;
+import org.springframework.ai.model.tool.ToolCallingChatOptions;
+import org.springframework.ai.tool.ToolCallback;
 
-public final class SubAuthChatOptions implements ChatOptions {
+public final class SubAuthChatOptions implements ToolCallingChatOptions {
     private final SubAuthProvider provider;
     private final SubAuthEffort effort;
     private final String model;
@@ -15,6 +21,10 @@ public final class SubAuthChatOptions implements ChatOptions {
     private final Double temperature;
     private final Integer topK;
     private final Double topP;
+    private List<ToolCallback> toolCallbacks;
+    private Map<String, Object> toolContext;
+    private Set<String> toolNames;
+    private Boolean internalToolExecutionEnabled;
 
     private SubAuthChatOptions(Builder builder) {
         this.provider = builder.provider;
@@ -27,6 +37,10 @@ public final class SubAuthChatOptions implements ChatOptions {
         this.temperature = builder.temperature;
         this.topK = builder.topK;
         this.topP = builder.topP;
+        this.toolCallbacks = List.copyOf(builder.toolCallbacks);
+        this.toolContext = Map.copyOf(builder.toolContext);
+        this.toolNames = Set.copyOf(builder.toolNames);
+        this.internalToolExecutionEnabled = builder.internalToolExecutionEnabled;
     }
 
     public static Builder builder() {
@@ -49,6 +63,34 @@ public final class SubAuthChatOptions implements ChatOptions {
     @Override public Double getTemperature() { return temperature; }
     @Override public Integer getTopK() { return topK; }
     @Override public Double getTopP() { return topP; }
+    @Override public List<ToolCallback> getToolCallbacks() { return toolCallbacks; }
+    @Override public Map<String, Object> getToolContext() { return toolContext; }
+
+    /** Spring AI 1.1 compatibility method. */
+    public void setToolCallbacks(List<ToolCallback> toolCallbacks) {
+        this.toolCallbacks = toolCallbacks == null ? List.of() : List.copyOf(toolCallbacks);
+    }
+
+    /** Spring AI 1.1 compatibility method. */
+    public Set<String> getToolNames() { return toolNames; }
+
+    /** Spring AI 1.1 compatibility method. */
+    public void setToolNames(Set<String> toolNames) {
+        this.toolNames = toolNames == null ? Set.of() : Set.copyOf(toolNames);
+    }
+
+    /** Spring AI 1.1 compatibility method. */
+    public Boolean getInternalToolExecutionEnabled() { return internalToolExecutionEnabled; }
+
+    /** Spring AI 1.1 compatibility method. */
+    public void setInternalToolExecutionEnabled(Boolean enabled) {
+        this.internalToolExecutionEnabled = enabled;
+    }
+
+    /** Spring AI 1.1 compatibility method. */
+    public void setToolContext(Map<String, Object> toolContext) {
+        this.toolContext = toolContext == null ? Map.of() : Map.copyOf(toolContext);
+    }
 
     @Override
     public Builder mutate() {
@@ -64,7 +106,7 @@ public final class SubAuthChatOptions implements ChatOptions {
         return new Builder(this).build();
     }
 
-    public static final class Builder implements ChatOptions.Builder<Builder> {
+    public static final class Builder implements ToolCallingChatOptions.Builder<Builder> {
         private SubAuthProvider provider;
         private SubAuthEffort effort;
         private String model;
@@ -75,6 +117,10 @@ public final class SubAuthChatOptions implements ChatOptions {
         private Double temperature;
         private Integer topK;
         private Double topP;
+        private List<ToolCallback> toolCallbacks = List.of();
+        private Map<String, Object> toolContext = Map.of();
+        private Set<String> toolNames = Set.of();
+        private Boolean internalToolExecutionEnabled;
 
         public Builder() {}
 
@@ -89,6 +135,10 @@ public final class SubAuthChatOptions implements ChatOptions {
             this.temperature = source.temperature;
             this.topK = source.topK;
             this.topP = source.topP;
+            this.toolCallbacks = source.toolCallbacks;
+            this.toolContext = source.toolContext;
+            this.toolNames = source.toolNames;
+            this.internalToolExecutionEnabled = source.internalToolExecutionEnabled;
         }
 
         public Builder provider(SubAuthProvider provider) { this.provider = provider; return this; }
@@ -101,6 +151,43 @@ public final class SubAuthChatOptions implements ChatOptions {
         @Override public Builder temperature(Double value) { this.temperature = value; return this; }
         @Override public Builder topK(Integer value) { this.topK = value; return this; }
         @Override public Builder topP(Double value) { this.topP = value; return this; }
+        @Override public Builder toolCallbacks(List<ToolCallback> value) {
+            this.toolCallbacks = value == null ? List.of() : List.copyOf(value);
+            return this;
+        }
+        @Override public Builder toolCallbacks(ToolCallback... value) {
+            return toolCallbacks(value == null ? List.of() : List.of(value));
+        }
+        @Override public Builder toolContext(Map<String, Object> value) {
+            this.toolContext = value == null ? Map.of() : Map.copyOf(value);
+            return this;
+        }
+        @Override public Builder toolContext(String key, Object value) {
+            Map<String, Object> updated = new LinkedHashMap<>(toolContext);
+            updated.put(key, value);
+            this.toolContext = Map.copyOf(updated);
+            return this;
+        }
+
+        /** Spring AI 1.1 compatibility method. */
+        public Builder toolNames(Set<String> value) {
+            this.toolNames = value == null ? Set.of() : Set.copyOf(value);
+            return this;
+        }
+
+        /** Spring AI 1.1 compatibility method. */
+        public Builder toolNames(String... value) {
+            this.toolNames = value == null
+                    ? Set.of()
+                    : Set.copyOf(new LinkedHashSet<>(List.of(value)));
+            return this;
+        }
+
+        /** Spring AI 1.1 compatibility method. */
+        public Builder internalToolExecutionEnabled(Boolean value) {
+            this.internalToolExecutionEnabled = value;
+            return this;
+        }
 
         @Override
         public Builder clone() {
@@ -118,9 +205,19 @@ public final class SubAuthChatOptions implements ChatOptions {
             if (options.getTemperature() != null) temperature(options.getTemperature());
             if (options.getTopK() != null) topK(options.getTopK());
             if (options.getTopP() != null) topP(options.getTopP());
+            if (options instanceof ToolCallingChatOptions toolOptions) {
+                if (toolOptions.getToolCallbacks() != null) {
+                    toolCallbacks(toolOptions.getToolCallbacks());
+                }
+                if (toolOptions.getToolContext() != null) {
+                    toolContext(toolOptions.getToolContext());
+                }
+            }
             if (options instanceof SubAuthChatOptions subAuth) {
                 if (subAuth.getProvider() != null) provider(subAuth.getProvider());
                 if (subAuth.getEffort() != null) effort(subAuth.getEffort());
+                toolNames(subAuth.getToolNames());
+                internalToolExecutionEnabled(subAuth.getInternalToolExecutionEnabled());
             }
             return this;
         }

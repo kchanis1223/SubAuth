@@ -11,7 +11,17 @@ public record RuntimeRequest(
         List<RuntimeMessage> messages,
         String model,
         SubAuthEffort effort,
-        Duration timeout) {
+        Duration timeout,
+        List<RuntimeTool> tools) {
+
+    public RuntimeRequest(
+            SubAuthProvider provider,
+            List<RuntimeMessage> messages,
+            String model,
+            SubAuthEffort effort,
+            Duration timeout) {
+        this(provider, messages, model, effort, timeout, List.of());
+    }
 
     public RuntimeRequest {
         if (provider == null) throw new IllegalArgumentException("provider is required");
@@ -20,5 +30,6 @@ public record RuntimeRequest(
         if (timeout == null || timeout.isNegative() || timeout.isZero()) {
             throw new IllegalArgumentException("timeout must be positive");
         }
+        tools = tools == null ? List.of() : List.copyOf(tools);
     }
 }
