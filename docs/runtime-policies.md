@@ -8,9 +8,9 @@ export raw OpenAI access or refresh tokens.
 
 ## Claude
 
-Anthropic does not permit third-party products to route user requests through
-consumer Claude subscription credentials. The Claude adapter exists for local
-development and limited previews, is marked experimental in response metadata,
+Using consumer Claude subscription credentials in services for third parties
+is not recommended under provider terms. The Claude adapter exists for local
+development and internal previews, is marked experimental in response metadata,
 and must be replaced with supported API authentication before formal release.
 
 SubAuth removes direct Anthropic API and supported cloud-provider credentials

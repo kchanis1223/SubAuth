@@ -2,10 +2,11 @@
 
 ## Product boundary
 
-SubAuth is a Spring AI model provider for development and developer-controlled
-demos. The Spring Boot main service remains responsible for HTTP endpoints,
-external-user authentication, authorization, rate limits, persistence, and
-chat memory.
+SubAuth is a Spring AI model provider for development and internal previews.
+Using consumer subscription models in services for third parties is not
+recommended under provider terms. The Spring Boot main service remains
+responsible for HTTP endpoints, external-user authentication, authorization,
+rate limits, persistence, and chat memory.
 
 ```text
 external user

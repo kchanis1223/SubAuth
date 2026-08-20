@@ -28,12 +28,13 @@ git clone https://github.com/kchanis1223/SubAuth.git
 5. 토큰, OAuth 정보, `~/.codex/auth.json` 내용을 읽거나 출력하지 않습니다.
 6. 인증 정보는 프로젝트 파일이나 Git에 추가하지 않습니다.
 7. 기존 파일의 관련 없는 사용자 변경을 덮어쓰지 않습니다.
-8. SubAuth는 개발과 개발자가 통제하는 시연에만 사용합니다. 운영 설정을 SubAuth로
-   바꾸지 않습니다.
+8. SubAuth는 개발과 내부 시연을 위한 도구입니다. 제3자를 위한 서비스에 구독 모델을
+   사용하는 것은 약관상 권장되지 않으며, 운영 설정은 각 공급자의 공식 API 인증을
+   사용합니다.
 9. HTTP API 경로를 임의로 `/chat`이라고 가정하지 않습니다. 기존 Controller를
    확인하고, 새 API가 필요하면 사용자에게 알립니다.
 
-현재 배포 버전은 `0.2.0-internal.3`입니다.
+현재 배포 버전은 `0.2.0-internal.4`입니다.
 
 ## 1. 프로젝트 확인
 
@@ -74,13 +75,13 @@ SubAuth 저장소가 로컬에 있다면 해당 저장소의 설정 스크립트
 Gradle:
 
 ```bash
-./scripts/setup-internal.sh --yes --gradle-only --version 0.2.0-internal.3
+./scripts/setup-internal.sh --yes --gradle-only --version 0.2.0-internal.4
 ```
 
 Maven:
 
 ```bash
-./scripts/setup-internal.sh --yes --maven-only --version 0.2.0-internal.3
+./scripts/setup-internal.sh --yes --maven-only --version 0.2.0-internal.4
 ```
 
 이 스크립트가 수정하는 전역 파일은 Gradle의 `~/.gradle/gradle.properties` 또는
@@ -128,7 +129,7 @@ mavenCentral {
 기존 `dependencies`에 다음 한 줄을 추가합니다.
 
 ```groovy
-implementation 'io.github.kchanis1223:subauth-spring-boot-starter:0.2.0-internal.3'
+implementation 'io.github.kchanis1223:subauth-spring-boot-starter:0.2.0-internal.4'
 ```
 
 ### Gradle Kotlin
@@ -163,7 +164,7 @@ repositories {
 }
 
 dependencies {
-    implementation("io.github.kchanis1223:subauth-spring-boot-starter:0.2.0-internal.3")
+    implementation("io.github.kchanis1223:subauth-spring-boot-starter:0.2.0-internal.4")
 }
 ```
 
@@ -176,7 +177,7 @@ dependencies {
 <dependency>
     <groupId>io.github.kchanis1223</groupId>
     <artifactId>subauth-spring-boot-starter</artifactId>
-    <version>0.2.0-internal.3</version>
+    <version>0.2.0-internal.4</version>
 </dependency>
 ```
 
@@ -219,9 +220,10 @@ spring.ai.subauth.probe-timeout=20s
 
 기존 코드의 `temperature`, `maxTokens`, `topP` 같은 생성 옵션은 삭제하지 않아도
 됩니다. 구독 런타임이 적용할 수 없는 옵션은 기본값으로 무시되며 응답 메타데이터의
-`ignoredOptions`에 기록됩니다. Codex는 Spring AI `Media`의 PNG·JPEG 이미지 입력을
-지원합니다. 그 밖의 이미지·파일·도구 호출은 요청 의미가 달라질 수 있어 계속
-예외로 처리합니다.
+`ignoredOptions`에 기록됩니다. Codex는 Spring AI `Media`의 PNG·JPEG 이미지 입력과
+요청에 등록된 Spring AI `ToolCallback`을 지원합니다. 기존 `@Tool`과 `.tools(...)`
+사용 코드는 유지합니다. Claude·Gemini의 이미지·도구 호출과 일반 파일 입력은 아직
+지원하지 않으며 요청 의미가 달라질 수 있어 예외로 처리합니다.
 
 기존 API 키 자리표시자가 값 없이 평가되어 애플리케이션 시작을 막는지 확인합니다.
 운영용 API 설정은 삭제하지 말고 운영 프로필에 유지합니다.
@@ -254,7 +256,8 @@ claude auth status --json
 ```
 
 `loggedIn`이 `true`이고 Claude.ai 구독 로그인이 선택되었는지 확인합니다. Claude
-연결은 개발과 제한된 시연 용도임을 사용자에게 알립니다.
+연결을 제3자를 위한 서비스에 사용하는 것은 약관상 권장되지 않으며, 정식 운영
+전에는 Anthropic이 지원하는 API 인증으로 전환해야 한다고 알립니다.
 
 Gemini 구독:
 
